@@ -62,6 +62,59 @@ struct Config: Codable {
     var wecomWebhookURL: String?
     var localNotifications = true
 
+    init() {}
+
+    /// Decode field by field, falling back to the default for anything absent.
+    ///
+    /// The synthesised initialiser requires every key to be present, so adding
+    /// a single new setting made every existing config file fail to decode —
+    /// and `load()` quietly substituted defaults for the lot. Silently
+    /// resetting someone's settings on upgrade is bad; silently resetting
+    /// `dryRun`, which decides whether processes get touched, is worse.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = Config()
+
+        func value<T: Decodable>(_ key: CodingKeys, _ standard: T) -> T {
+            (try? container.decodeIfPresent(T.self, forKey: key)) as? T ?? standard
+        }
+        /// For optionals, absence means "use the default"; an explicit null
+        /// means the user turned it off.
+        func optional(_ key: CodingKeys, _ standard: Double?) -> Double? {
+            guard container.contains(key) else { return standard }
+            return try? container.decodeIfPresent(Double.self, forKey: key) ?? nil
+        }
+
+        tickSeconds = value(.tickSeconds, fallback.tickSeconds)
+        cpuFloorPercent = value(.cpuFloorPercent, fallback.cpuFloorPercent)
+        minimumSamples = value(.minimumSamples, fallback.minimumSamples)
+        deviationThreshold = value(.deviationThreshold, fallback.deviationThreshold)
+        anomalyThreshold = value(.anomalyThreshold, fallback.anomalyThreshold)
+        stallRatio = value(.stallRatio, fallback.stallRatio)
+        meaningfulNetBytesPerCPUSecond = value(.meaningfulNetBytesPerCPUSecond,
+                                               fallback.meaningfulNetBytesPerCPUSecond)
+        meaningfulSyscallsPerCPUSecond = value(.meaningfulSyscallsPerCPUSecond,
+                                               fallback.meaningfulSyscallsPerCPUSecond)
+        sustainedTicks = value(.sustainedTicks, fallback.sustainedTicks)
+        escalateAfterTicks = value(.escalateAfterTicks, fallback.escalateAfterTicks)
+        maxRestartsPerHour = value(.maxRestartsPerHour, fallback.maxRestartsPerHour)
+        dryRun = value(.dryRun, fallback.dryRun)
+        neverTouch = value(.neverTouch, fallback.neverTouch)
+        menuBarMetrics = value(.menuBarMetrics, fallback.menuBarMetrics)
+        menuBarLabels = value(.menuBarLabels, fallback.menuBarLabels)
+        hasShownWindow = value(.hasShownWindow, fallback.hasShownWindow)
+        language = value(.language, fallback.language)
+        localNotifications = value(.localNotifications, fallback.localNotifications)
+        ntfyTopicURL = (try? container.decodeIfPresent(String.self,
+                                                       forKey: .ntfyTopicURL)) ?? nil
+        wecomWebhookURL = (try? container.decodeIfPresent(String.self,
+                                                          forKey: .wecomWebhookURL)) ?? nil
+        alertCPUPercent = optional(.alertCPUPercent, fallback.alertCPUPercent)
+        alertMemoryPercent = optional(.alertMemoryPercent, fallback.alertMemoryPercent)
+        alertBatteryTemperature = optional(.alertBatteryTemperature,
+                                           fallback.alertBatteryTemperature)
+    }
+
     /// Overridable via WATTSON_HOME, which keeps test runs from touching the
     /// baselines learned on the real machine.
     static let directory: URL = {

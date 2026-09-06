@@ -34,19 +34,23 @@ struct MenuBarLabel: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: model.state.anomalyCount > 0 ? "flame.fill" : "flame")
-            ForEach(model.config.menuBarMetrics) { metric in
-                if let text = value(for: metric) {
-                    // Two readings side by side are ambiguous without a tag;
-                    // one is obvious with or without.
-                    let showTag = model.config.menuBarLabels
-                        && model.config.menuBarMetrics.count > 1
-                    Text(showTag ? "\(metric.shortTitle) \(text)" : text)
-                        .font(.system(size: 11).monospacedDigit())
-                }
-            }
+        // One Text, not an HStack of them. MenuBarExtra renders its label into
+        // a single fixed-size template image, and additional subviews get
+        // clipped away — which showed up as only the first reading appearing
+        // however many were enabled.
+        Text(composed)
+            .font(.system(size: 11).monospacedDigit())
+    }
+
+    private var composed: String {
+        let showTag = model.config.menuBarLabels
+            && model.config.menuBarMetrics.count > 1
+        let readings = model.config.menuBarMetrics.compactMap { metric -> String? in
+            guard let text = value(for: metric) else { return nil }
+            return showTag ? "\(metric.shortTitle)\u{2009}\(text)" : text
         }
+        let icon = model.state.anomalyCount > 0 ? "\u{25C6}" : "\u{25C7}"
+        return readings.isEmpty ? icon : icon + " " + readings.joined(separator: "  ")
     }
 
     private func value(for metric: MenuBarMetric) -> String? {

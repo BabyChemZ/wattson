@@ -40,7 +40,7 @@ struct OverviewPage: View {
             }
 
             Card(title: L("CPU load", "CPU 负载")) {
-                AreaChart(values: model.state.cpuTrail, tint: .cpuTint)
+                BarChart(values: model.state.cpuTrail, tint: .cpuTint)
                     .frame(height: 110)
                 Text(model.trailSpanText)
                     .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
@@ -48,8 +48,12 @@ struct OverviewPage: View {
 
             HStack(alignment: .top, spacing: 12) {
                 Card(title: L("Busiest now", "当前占用最高")) {
-                    ForEach(model.topRows(5)) { row in
-                        CompactProcessRow(row: row)
+                    let rows = model.topRows(6)
+                    let peak = rows.first?.cpuPercent ?? 1
+                    ForEach(rows) { row in
+                        ProcessBar(name: row.command, value: row.cpuPercent,
+                                   caption: String(format: "%.0f%%", row.cpuPercent),
+                                   peak: peak)
                     }
                 }
                 Card(title: L("Recent events", "最近事件")) {
@@ -126,7 +130,7 @@ struct CPUPage: View {
             }
 
             Card(title: L("Load history", "负载历史")) {
-                AreaChart(values: model.state.cpuTrail, tint: .cpuTint)
+                BarChart(values: model.state.cpuTrail, tint: .cpuTint)
                     .frame(height: 130)
                 Text(model.trailSpanText)
                     .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
@@ -206,7 +210,7 @@ struct GPUPage: View {
 
                 if model.state.gpuTrail.count > 1 {
                     Card(title: L("GPU history", "GPU 历史")) {
-                        AreaChart(values: model.state.gpuTrail, tint: .coreTint)
+                        BarChart(values: model.state.gpuTrail, tint: .coreTint)
                             .frame(height: 120)
                         Text(model.trailSpanText)
                             .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
@@ -279,7 +283,7 @@ struct MemoryPage: View {
             }
 
             Card(title: L("Memory history", "内存历史")) {
-                AreaChart(values: model.state.memoryTrail, tint: .memoryTint)
+                BarChart(values: model.state.memoryTrail, tint: .memoryTint)
                     .frame(height: 110)
                 HStack {
                     Text(model.trailSpanText)
@@ -291,14 +295,12 @@ struct MemoryPage: View {
             }
 
             Card(title: L("Largest resident", "占用内存最多")) {
-                ForEach(model.topByMemory(8)) { row in
-                    HStack {
-                        Text(row.command).font(.ui(11.5)).foregroundStyle(Color.ink)
-                            .lineLimit(1).truncationMode(.middle)
-                        Spacer()
-                        Text(formatBytes(row.memBytes))
-                            .font(.figure(11)).foregroundStyle(Color.inkMuted)
-                    }
+                let rows = model.topByMemory(8)
+                let peak = Double(rows.first?.memBytes ?? 1)
+                ForEach(rows) { row in
+                    ProcessBar(name: row.command, value: Double(row.memBytes),
+                               caption: formatBytes(row.memBytes), peak: peak,
+                               tint: .memoryTint)
                 }
             }
         }
@@ -347,9 +349,9 @@ struct BatteryPage: View {
 
                 if model.state.temperatureTrail.count > 1 {
                     Card(title: L("Temperature history", "温度历史")) {
-                        AreaChart(values: model.state.temperatureTrail,
-                                  tint: model.temperatureTint(battery.temperature),
-                                  ceiling: 50, guides: [20, 30, 35, 40, 50])
+                        BarChart(values: model.state.temperatureTrail,
+                                 tint: model.temperatureTint(battery.temperature),
+                                 ceiling: 50, guides: [30, 35, 40])
                             .frame(height: 100)
                         HStack {
                             Text(model.trailSpanText)
@@ -367,9 +369,9 @@ struct BatteryPage: View {
                     }
                     if model.state.powerTrail.count > 1 {
                         Card(title: L("Power draw", "功率")) {
-                            AreaChart(values: model.state.powerTrail, tint: .alertTint,
-                                      ceiling: max(model.state.powerTrail.max() ?? 30, 5),
-                                      guides: [])
+                            BarChart(values: model.state.powerTrail, tint: .alertTint,
+                                     ceiling: max(model.state.powerTrail.max() ?? 30, 5),
+                                     guides: [])
                                 .frame(height: 74)
                             Text(String(format: L("now %.1f W", "当前 %.1f W"),
                                         abs(battery.watts)))

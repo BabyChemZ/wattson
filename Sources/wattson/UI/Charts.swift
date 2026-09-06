@@ -325,3 +325,85 @@ struct NextSampleCountdown: View {
         return L("next in \(remaining)s", "\(remaining) 秒后采样")
     }
 }
+
+
+/// Time series as columns rather than a filled line.
+///
+/// Drawn on a Canvas because a series can hold a few hundred samples, and a
+/// Rectangle per sample would build that many views on every refresh. Columns
+/// beat an area chart here: with only a handful of readings an area chart is a
+/// nearly flat line, while bars stay individually legible from the first one.
+struct BarChart: View {
+    let values: [Double]
+    var tint: Color = .cpuTint
+    var ceiling: Double = 100
+    var guides: [Double] = [25, 50, 75, 100]
+    /// Draw at least this many slots, so early samples appear at their true
+    /// width instead of stretching to fill the card.
+    var minimumSlots: Int = 60
+
+    var body: some View {
+        Canvas { context, size in
+            for guide in guides {
+                let y = size.height * (1 - min(guide / ceiling, 1))
+                var line = Path()
+                line.move(to: CGPoint(x: 0, y: y))
+                line.addLine(to: CGPoint(x: size.width, y: y))
+                context.stroke(line, with: .color(.gray.opacity(0.18)), lineWidth: 0.5)
+            }
+
+            let slots = max(values.count, minimumSlots)
+            let slot = size.width / CGFloat(slots)
+            let barWidth = max(1, slot * 0.72)
+
+            for (index, value) in values.enumerated() {
+                let ratio = min(max(value / ceiling, 0), 1)
+                let height = max(1, size.height * ratio)
+                let x = CGFloat(index) * slot + (slot - barWidth) / 2
+                let rect = CGRect(x: x, y: size.height - height,
+                                  width: barWidth, height: height)
+                // Taller columns read as hotter, which matches how the eye
+                // already scans the chart.
+                let shade = 0.55 + 0.45 * ratio
+                context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 3),
+                             with: .color(tint.opacity(shade)))
+            }
+        }
+    }
+}
+
+/// One process as a labelled horizontal bar. Ranking is the question these
+/// lists answer, and a bar answers it without reading any numbers.
+struct ProcessBar: View {
+    let name: String
+    let value: Double
+    let caption: String
+    /// The largest value in the list, so bars are comparable to each other.
+    let peak: Double
+    var tint: Color = .cpuTint
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Text(name)
+                    .font(.ui(11.5))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 6)
+                Text(caption)
+                    .font(.figure(11, .medium))
+                    .foregroundStyle(Color.inkMuted)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.hairline)
+                    Capsule().fill(tint)
+                        .frame(width: max(2, geo.size.width
+                                          * min(max(value / max(peak, 0.001), 0), 1)))
+                }
+            }
+            .frame(height: 5)
+        }
+    }
+}

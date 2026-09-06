@@ -250,6 +250,14 @@ final class AppModel: ObservableObject {
         battery.currentCapacityMAh = 3901
         battery.timeRemainingMinutes = 214
         vitals.battery = battery
+        var gpu = GPUInfo()
+        gpu.deviceUtilization = 18
+        gpu.rendererUtilization = 14
+        gpu.tilerUtilization = 5
+        gpu.inUseMemory = 1_180_000_000
+        gpu.allocatedMemory = 4_278_190_080
+        gpu.name = "Apple M5"
+        vitals.gpu = gpu
 
         let coreLoads = [0.42, 0.38, 0.31, 0.27, 0.19, 0.22, 0.66, 0.58, 0.12, 0.09]
         var state = EngineState()
@@ -263,6 +271,7 @@ final class AppModel: ObservableObject {
         state.memoryTrail = trail(66, 4, 120)
         state.temperatureTrail = trail(31, 4, 120)
         state.powerTrail = trail(14, 6, 120)
+        state.gpuTrail = trail(18, 12, 120)
         state.rows = [
                 ProcessRow(pid: 1, command: "verge-mihomo", cpuPercent: 402.1,
                            memBytes: 320_000_000, usualCPUPercent: 1.5,

@@ -277,3 +277,51 @@ struct LegendDot: View {
         }
     }
 }
+
+
+/// A determinate progress bar with an optional inline percentage.
+struct ProgressBar: View {
+    let fraction: Double
+    var tint: Color = .accent
+    var height: CGFloat = 6
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.hairline)
+                Capsule()
+                    .fill(tint)
+                    .frame(width: max(height, geo.size.width * min(max(fraction, 0), 1)))
+                    .animation(.easeOut(duration: 0.4), value: fraction)
+            }
+        }
+        .frame(height: height)
+    }
+}
+
+/// Live countdown to the next sample. Without it the app looks idle between
+/// ticks, which reads as stalled rather than waiting.
+struct NextSampleCountdown: View {
+    let nextTickAt: Date?
+    let isSampling: Bool
+    let isWarmingUp: Bool
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            Text(caption(now: context.date))
+                .font(.ui(10))
+                .foregroundStyle(Color.inkFaint)
+                .monospacedDigit()
+        }
+    }
+
+    private func caption(now: Date) -> String {
+        if isSampling {
+            return isWarmingUp ? L("first samples…", "首次采样…")
+                               : L("sampling…", "采样中…")
+        }
+        guard let nextTickAt else { return L("starting…", "启动中…") }
+        let remaining = Int(max(0, nextTickAt.timeIntervalSince(now).rounded()))
+        return L("next in \(remaining)s", "\(remaining) 秒后采样")
+    }
+}

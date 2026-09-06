@@ -86,10 +86,12 @@ struct PanelView: View {
             }
             Vital(label: L("Modelled", "已建模"),
                   value: "\(model.state.learnedPrograms)") {
-                Text(model.learningTail)
-                    .font(.ui(9.5))
-                    .foregroundStyle(Color.inkFaint)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 3) {
+                    ProgressBar(fraction: model.state.modelledFraction, height: 3)
+                    Text(model.learningTail)
+                        .font(.ui(9))
+                        .foregroundStyle(Color.inkFaint)
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -179,6 +181,9 @@ struct PanelView: View {
     private var footer: some View {
         HStack(spacing: 14) {
             ModePill(observeOnly: model.state.observeOnly)
+            NextSampleCountdown(nextTickAt: model.state.nextTickAt,
+                                isSampling: model.state.isSampling,
+                                isWarmingUp: model.state.isWarmingUp)
             Spacer()
             FooterButton(title: L("Open Wattson", "打开主窗口")) { model.openMainWindow() }
             FooterButton(title: L("Settings", "设置")) { model.openSettings() }

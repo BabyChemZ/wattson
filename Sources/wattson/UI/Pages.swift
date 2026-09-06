@@ -7,6 +7,10 @@ struct OverviewPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if model.state.learningPrograms > 0 {
+                LearningCard(model: model)
+            }
+
             HStack(spacing: 12) {
                 StatTile(label: L("CPU", "CPU"),
                          value: String(format: "%.0f%%", model.state.vitals.cpuBusy),
@@ -341,6 +345,51 @@ struct NetworkPage: View {
                        "以吞吐为职责的程序，就按吞吐来判断：当它占满 CPU 而字节计数不再增长时，这是卡死最明确的证据。"))
                     .font(.ui(11)).foregroundStyle(Color.inkMuted)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// Shown while programs still lack enough history to be judged. It answers the
+/// two questions someone has after installing: is it doing anything, and when
+/// will it be ready.
+struct LearningCard: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(L("Building behavioural baselines", "正在建立行为基线"))
+                        .font(.ui(12.5, .semibold)).foregroundStyle(Color.ink)
+                    Spacer()
+                    Text(String(format: "%.0f%%", model.state.modelledFraction * 100))
+                        .font(.figure(12.5, .medium)).foregroundStyle(Color.accent)
+                }
+
+                ProgressBar(fraction: model.state.modelledFraction, height: 7)
+
+                HStack(spacing: 5) {
+                    Text(L("\(model.state.learnedPrograms) modelled",
+                           "\(model.state.learnedPrograms) 个已建模"))
+                    Text("·")
+                    Text(L("\(model.state.learningPrograms) still learning",
+                           "\(model.state.learningPrograms) 个学习中"))
+                    if let minutes = model.state.estimatedMinutesToModel {
+                        Text("·")
+                        Text(L("about \(minutes) min to go", "约还需 \(minutes) 分钟"))
+                    }
+                    Spacer()
+                    NextSampleCountdown(nextTickAt: model.state.nextTickAt,
+                                        isSampling: model.state.isSampling,
+                                        isWarmingUp: model.state.isWarmingUp)
+                }
+                .font(.ui(10.5))
+                .foregroundStyle(Color.inkMuted)
+
+                Text(L("Until a program has a baseline it is watched but never acted on.",
+                       "在建立基线之前，程序只被观察，绝不会被处置。"))
+                    .font(.ui(10)).foregroundStyle(Color.inkFaint)
             }
         }
     }

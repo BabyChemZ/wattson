@@ -74,8 +74,18 @@ struct FullProcessRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Sparkline(values: row.recentCPU, tint: isAnomalous ? .alertTint : .inkFaint)
-                .frame(width: 52, height: 16)
+            Group {
+                if case .learning(let samples, let needed) = row.status {
+                    // A bar, not "18/40": progress is the thing being asked about.
+                    ProgressBar(fraction: Double(samples) / Double(max(needed, 1)),
+                                tint: .inkFaint, height: 4)
+                        .frame(width: 52)
+                } else {
+                    Sparkline(values: row.recentCPU,
+                              tint: isAnomalous ? .alertTint : .inkFaint)
+                        .frame(width: 52, height: 16)
+                }
+            }
             Text(String(format: "%.0f%%", row.cpuPercent))
                 .font(.figure(11.5, isAnomalous ? .semibold : .regular))
                 .foregroundStyle(isAnomalous ? Color.alertTint : Color.ink)
@@ -101,7 +111,8 @@ struct FullProcessRow: View {
             if let reason = ProtectionReason(rawValue: why) { return reason.displayName }
             return L("excluded", "已排除")
         case .learning(let samples, let needed):
-            return L("learning \(samples)/\(needed)", "学习中 \(samples)/\(needed)")
+            return L("learning · \(samples)/\(needed) samples",
+                     "学习中 · \(samples)/\(needed) 个样本")
         case .anomalous:
             return row.detail.isEmpty ? nil : row.detail
         case .normal:

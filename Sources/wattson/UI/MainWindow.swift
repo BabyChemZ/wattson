@@ -105,20 +105,26 @@ struct MainWindowView: View {
     }
 
     private var sidebarFooter: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 7) {
             Hairline()
-            HStack(spacing: 6) {
-                StatusDot(alarmed: model.state.anomalyCount > 0,
-                          working: model.state.isSampling)
-                Text(model.state.isSampling
-                     ? L("Sampling", "采样中")
-                     : L("Every \(Int(model.config.tickSeconds))s",
-                         "每 \(Int(model.config.tickSeconds)) 秒"))
-                    .font(.ui(10))
-                    .foregroundStyle(Color.inkFaint)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    StatusDot(alarmed: model.state.anomalyCount > 0,
+                              working: model.state.isSampling)
+                    Text(L("Modelled", "已建模"))
+                        .font(.ui(10)).foregroundStyle(Color.inkMuted)
+                    Spacer()
+                    Text("\(model.state.learnedPrograms)/"
+                         + "\(model.state.learnedPrograms + model.state.learningPrograms)")
+                        .font(.figure(10, .medium)).foregroundStyle(Color.inkMuted)
+                }
+                ProgressBar(fraction: model.state.modelledFraction, height: 4)
+                NextSampleCountdown(nextTickAt: model.state.nextTickAt,
+                                    isSampling: model.state.isSampling,
+                                    isWarmingUp: model.state.isWarmingUp)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.bottom, 12)
         }
     }
 

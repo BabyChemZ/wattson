@@ -83,9 +83,23 @@ struct EngineState: Equatable {
     var learnedPrograms = 0
     var learningPrograms = 0
     var lastTick: Date?
+    /// When the next sample is due, so the UI can show a live countdown rather
+    /// than a status word that never appears to change.
+    var nextTickAt: Date?
+    var tickCount = 0
+    /// True while the first few rapid samples run, so the UI can say so.
+    var isWarmingUp = false
     var isSampling = false
+    /// Roughly how long until most programs have a usable baseline.
+    var estimatedMinutesToModel: Int?
     var observeOnly = true
     var startedAt = Date()
+
+    /// Fraction of seen programs that have enough history to be judged.
+    var modelledFraction: Double {
+        let total = learnedPrograms + learningPrograms
+        return total > 0 ? Double(learnedPrograms) / Double(total) : 0
+    }
 
     var anomalyCount: Int {
         rows.filter { if case .anomalous = $0.status { return true } else { return false } }.count

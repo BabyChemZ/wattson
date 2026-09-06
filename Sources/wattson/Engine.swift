@@ -55,6 +55,11 @@ final class Engine: @unchecked Sendable {
     private var powerTrail: [Double] = []
     private var restartTimes: [String: [Date]] = [:]
     private var ticksSinceSave = 0
+    private var tickCount = 0
+    /// The first samples run close together. A 30s tick means an empty window
+    /// for the first half-minute, which reads as broken rather than patient.
+    private static let warmupTicks = 4
+    private static let warmupInterval: TimeInterval = 4
     private var recentEvents: [Event] = []
 
     /// Called after every tick with a fresh view of the machine.
@@ -88,8 +93,15 @@ final class Engine: @unchecked Sendable {
         log.write("wattson started — tick \(Int(config.tickSeconds))s, "
                 + "mode \(config.dryRun ? "observe-only" : "active")")
 
+        scheduleTimer(interval: Self.warmupInterval)
+    }
+
+    /// The timer is rescheduled once warm-up ends, so the tick rate can change
+    /// without tearing down the engine's state.
+    private func scheduleTimer(interval: TimeInterval) {
+        timer?.cancel()
         let source = DispatchSource.makeTimerSource(queue: queue)
-        source.schedule(deadline: .now(), repeating: config.tickSeconds)
+        source.schedule(deadline: .now(), repeating: interval)
         source.setEventHandler { [weak self] in self?.tick() }
         timer = source
         source.resume()
@@ -137,7 +149,11 @@ final class Engine: @unchecked Sendable {
     // MARK: - The tick
 
     private func tick() {
-        publish { $0.isSampling = true }
+        let warmingUp = tickCount < Self.warmupTicks
+        publish {
+            $0.isSampling = true
+            $0.isWarmingUp = warmingUp
+        }
 
         guard let snapshot = sampler.snapshot() else {
             log.write("sampling failed; skipping tick")
@@ -220,6 +236,19 @@ final class Engine: @unchecked Sendable {
         let trained = store.baselines.values.filter {
             $0.cpuPercent.count >= config.minimumSamples
         }.count
+
+        // How much longer the still-learning programs need, judged by the
+        // median rather than the worst case — a program seen once shouldn't
+        // make the whole estimate look hopeless.
+        let shortfalls = store.baselines.values
+            .map(\.cpuPercent.count)
+            .filter { $0 < config.minimumSamples }
+            .map { config.minimumSamples - $0 }
+            .sorted()
+        let remainingTicks = shortfalls.isEmpty ? nil : shortfalls[shortfalls.count / 2]
+        let estimate = remainingTicks.map {
+            max(1, Int(Double($0) * config.tickSeconds / 60))
+        }
         let sorted = rows.sorted {
             $0.status.sortRank != $1.status.sortRank
                 ? $0.status.sortRank < $1.status.sortRank
@@ -265,8 +294,16 @@ final class Engine: @unchecked Sendable {
             }
         }
 
+        tickCount += 1
+        let interval = tickCount < Self.warmupTicks
+            ? Self.warmupInterval : config.tickSeconds
+        if tickCount == Self.warmupTicks { scheduleTimer(interval: config.tickSeconds) }
+
         publish {
             $0.vitals = vitals
+            $0.tickCount = self.tickCount
+            $0.isWarmingUp = self.tickCount < Self.warmupTicks
+            $0.nextTickAt = Date().addingTimeInterval(interval)
             if !cores.isEmpty { $0.cores = cores }
             $0.efficiencyCoreCount = self.coreSampler.efficiencyCoreCount
             $0.performanceLevelName = self.coreSampler.performanceLevelName
@@ -278,6 +315,7 @@ final class Engine: @unchecked Sendable {
             $0.events = self.recentEvents
             $0.learnedPrograms = trained
             $0.learningPrograms = max(0, self.store.baselines.count - trained)
+            $0.estimatedMinutesToModel = estimate
             $0.lastTick = Date()
             $0.isSampling = false
             $0.observeOnly = self.config.dryRun

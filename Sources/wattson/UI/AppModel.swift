@@ -289,7 +289,10 @@ final class AppModel: ObservableObject {
                       stage: "demoted", observedOnly: false),
         ]
         state.learnedPrograms = 34
-        state.learningPrograms = 11
+        state.learningPrograms = 28
+        state.estimatedMinutesToModel = 12
+        state.nextTickAt = Date().addingTimeInterval(18)
+        state.tickCount = 96
         state.lastTick = Date()
         state.observeOnly = false
         model.state = state

@@ -210,11 +210,19 @@ struct SidebarRow: View {
 }
 
 /// Owns the single main window.
+///
+/// While a window is open the app becomes a regular one, and reverts to an
+/// accessory when it closes. Without that switch an LSUIElement app's window
+/// never yields focus properly: clicking another app leaves it sitting on top
+/// of whatever you switched to.
 @MainActor
 enum MainWindow {
     private static var window: NSWindow?
+    private static let closeWatcher = CloseWatcher()
 
     static func show(model: AppModel) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
         if let window {
             window.makeKeyAndOrderFront(nil)
             return
@@ -230,7 +238,22 @@ enum MainWindow {
         created.isReleasedWhenClosed = false
         created.setContentSize(NSSize(width: 940, height: 680))
         created.center()
+        created.delegate = closeWatcher
         created.makeKeyAndOrderFront(nil)
         window = created
+    }
+
+    static func windowClosed() {
+        window = nil
+        // Back to menu-bar-only, so no empty Dock icon is left behind.
+        NSApp.setActivationPolicy(.accessory)
+    }
+}
+
+/// Returns the app to accessory mode when the last window goes away.
+@MainActor
+final class CloseWatcher: NSObject, NSWindowDelegate {
+    nonisolated func windowWillClose(_ notification: Notification) {
+        Task { @MainActor in MainWindow.windowClosed() }
     }
 }

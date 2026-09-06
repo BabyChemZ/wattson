@@ -11,7 +11,7 @@ struct Sampler {
     var topProcessCount = 50
 
     private static let topColumns =
-        "pid,command,time,csw,idlew,sysmach,sysbsd,instrs,cycles,mem"
+        "pid,command,time,csw,idlew,sysmach,sysbsd,instrs,cycles,mem,power"
 
     func snapshot() -> Snapshot? {
         guard let (processTable, vitals) = sampleProcesses() else { return nil }
@@ -70,7 +70,7 @@ struct Sampler {
     /// whatever is left in the middle.
     static func parseTopRow(_ line: String) -> ProcSample? {
         let fields = line.split(separator: " ", omittingEmptySubsequences: true)
-        let statColumnCount = 8
+        let statColumnCount = 9
         guard fields.count >= statColumnCount + 2,
               let pid = Int32(fields[0]) else { return nil }
 
@@ -86,6 +86,10 @@ struct Sampler {
               let instrs = Parsing.counter(stats[5]),
               let cycles = Parsing.counter(stats[6]),
               let mem = Parsing.memory(stats[7]) else { return nil }
+        // `power` is the same composite Activity Monitor calls Energy Impact:
+        // CPU plus idle wakeups plus GPU, weighted the way the OS weights them.
+        let power = Double(stats[8].trimmingCharacters(
+            in: CharacterSet(charactersIn: "+-"))) ?? 0
 
         return ProcSample(
             pid: pid,
@@ -97,7 +101,8 @@ struct Sampler {
             cumulativeMachSyscalls: sysmach,
             cumulativeBSDSyscalls: sysbsd,
             intervalInstructions: instrs,
-            intervalCycles: cycles
+            intervalCycles: cycles,
+            energyImpact: power
         )
     }
 

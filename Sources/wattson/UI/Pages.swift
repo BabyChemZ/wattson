@@ -324,9 +324,13 @@ struct BatteryPage: View {
                 HStack(spacing: 12) {
                     StatTile(label: L("Charge", "电量"),
                              value: String(format: "%.0f%%", battery.chargePercent),
-                             caption: model.chargeCaption(battery),
+                             caption: model.powerFlowCaption(battery),
                              tint: .healthyTint,
                              fraction: battery.chargePercent / 100)
+                    StatTile(label: model.runtimeLabel(battery),
+                             value: model.runtimeValue(battery),
+                             caption: model.runtimeCaption(battery),
+                             tint: .cpuTint, fraction: nil)
                     StatTile(label: L("Temperature", "温度"),
                              value: String(format: "%.1f°C", battery.temperature),
                              caption: model.temperatureCaption(battery.temperature),
@@ -338,6 +342,26 @@ struct BatteryPage: View {
                                         "\(battery.cycleCount) 次循环"),
                              tint: model.healthTint(battery.healthPercent),
                              fraction: battery.healthPercent / 100)
+                }
+
+                Card(title: L("Draining the battery fastest", "最耗电的进程"),
+                     trailing: AnyView(
+                        Text(L("Energy Impact · right-click a row in Processes to act",
+                               "能耗影响 · 在「进程」页右键可操作"))
+                            .font(.ui(9.5)).foregroundStyle(Color.inkFaint))) {
+                    let rows = model.topByEnergy(6)
+                    if rows.isEmpty {
+                        Text(L("Waiting for the first process sample…",
+                               "等待首次进程采样…"))
+                            .font(.ui(11)).foregroundStyle(Color.inkFaint)
+                    } else {
+                        let peak = rows.first?.energyImpact ?? 1
+                        ForEach(rows) { row in
+                            ProcessBar(name: row.command, value: row.energyImpact,
+                                       caption: String(format: "%.0f", row.energyImpact),
+                                       peak: peak, tint: .alertTint)
+                        }
+                    }
                 }
 
                 Card(title: L("Why temperature matters", "温度为什么重要")) {
@@ -413,6 +437,22 @@ struct NetworkPage: View {
                                     "剩余 \(formatBytes(model.state.vitals.disk.freeBytes))"),
                          tint: .memoryTint,
                          fraction: model.state.vitals.disk.usedFraction)
+            }
+
+            Card(title: L("Busiest connections", "网络占用最高")) {
+                let rows = model.topByNetwork(6)
+                if rows.isEmpty {
+                    Text(L("No process is moving a meaningful amount of data.",
+                           "当前没有进程在传输可观的数据。"))
+                        .font(.ui(11)).foregroundStyle(Color.inkFaint)
+                } else {
+                    let peak = rows.first?.netBytesPerSecond ?? 1
+                    ForEach(rows) { row in
+                        ProcessBar(name: row.command, value: row.netBytesPerSecond,
+                                   caption: formatRate(row.netBytesPerSecond),
+                                   peak: peak, tint: .cpuTint)
+                    }
+                }
             }
 
             Card(title: L("Network-shaped programs", "网络型程序")) {

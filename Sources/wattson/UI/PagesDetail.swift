@@ -10,13 +10,15 @@ struct ProcessesPage: View {
         VStack(alignment: .leading, spacing: 12) {
             Card(title: L("All processes", "全部进程"),
                  trailing: AnyView(
-                    Text(L("click a row for its history", "点击某行查看它的历史"))
+                    Text(L("click for history · right-click for actions",
+                           "点击看历史 · 右键可操作"))
                         .font(.ui(10)).foregroundStyle(Color.inkFaint))) {
                 columnHeader
                 Hairline()
                 ForEach(model.allRows) { row in
                     VStack(spacing: 0) {
-                        FullProcessRow(row: row, selected: selected == row.pid)
+                        FullProcessRow(row: row, selected: selected == row.pid,
+                                       model: model)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 selected = selected == row.pid ? nil : row.pid
@@ -39,6 +41,7 @@ struct ProcessesPage: View {
             Text(L("NOW", "当前")).frame(width: 52, alignment: .trailing)
             Text(L("USUAL", "常态")).frame(width: 52, alignment: .trailing)
             Text(L("MEMORY", "内存")).frame(width: 62, alignment: .trailing)
+            Text(L("ENERGY", "能耗")).frame(width: 48, alignment: .trailing)
         }
         .font(.ui(9.5, .semibold))
         .tracking(0.5)
@@ -49,6 +52,7 @@ struct ProcessesPage: View {
 struct FullProcessRow: View {
     let row: ProcessRow
     let selected: Bool
+    var model: AppModel?
     @State private var hovering = false
 
     private var isAnomalous: Bool {
@@ -96,6 +100,11 @@ struct FullProcessRow: View {
             Text(formatBytes(row.memBytes))
                 .font(.figure(11)).foregroundStyle(Color.inkMuted)
                 .frame(width: 62, alignment: .trailing)
+            Text(row.energyImpact > 0
+                 ? String(format: "%.0f", row.energyImpact) : "—")
+                .font(.figure(11))
+                .foregroundStyle(row.energyImpact > 20 ? Color.alertTint : Color.inkMuted)
+                .frame(width: 48, alignment: .trailing)
         }
         .padding(.vertical, 5)
         .padding(.horizontal, 4)
@@ -103,6 +112,34 @@ struct FullProcessRow: View {
                     : hovering ? Color.surfaceSunken : .clear)
         .clipShape(RoundedRectangle(cornerRadius: 5))
         .onHover { hovering = $0 }
+        .contextMenu { menu }
+    }
+
+    /// Manual control. Offered even in observe-only mode: that setting governs
+    /// what the watchdog does unattended, not what you may do deliberately.
+    @ViewBuilder
+    private var menu: some View {
+        if let model, !model.isProtected(row) {
+            Button(L("Move to efficiency cores", "移到能效核")) { model.demote(row) }
+            Button(L("Restore normal priority", "恢复正常优先级")) { model.restore(row) }
+            Divider()
+            if model.isExcluded(row) {
+                Button(L("Watch this program again", "重新监控此程序")) {
+                    model.include(row)
+                }
+            } else {
+                Button(L("Never act on this program", "不再处置此程序")) {
+                    model.exclude(row)
+                }
+            }
+            Divider()
+            Button(L("Quit process…", "结束进程…"), role: .destructive) {
+                model.confirmTerminate(row)
+            }
+        } else {
+            Text(L("Protected — Wattson never acts on this",
+                   "受保护 —— Wattson 不会处置它"))
+        }
     }
 
     private var tag: String? {

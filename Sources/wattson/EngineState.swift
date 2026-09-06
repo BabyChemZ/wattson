@@ -9,6 +9,9 @@ struct ProcessRow: Identifiable, Equatable {
     let memBytes: UInt64
     /// What this program's CPU usually looks like, once known.
     let usualCPUPercent: Double?
+    /// Activity Monitor's Energy Impact for this process.
+    let energyImpact: Double
+    let netBytesPerSecond: Double
     /// Recent samples, oldest first — enough to draw a sparkline.
     let recentCPU: [Double]
     let status: RowStatus

@@ -32,7 +32,8 @@ struct VerdictEngine {
     /// - Parameter currentBurstSeconds: how long the process has been running hot
     ///   in this episode, if it currently is.
     func judge(_ d: ProcDelta, baseline: BehaviorBaseline?,
-               currentBurstSeconds: Double? = nil) -> Verdict {
+               currentBurstSeconds: Double? = nil,
+               context: JudgementContext = JudgementContext()) -> Verdict {
         // Only processes actually burning power are candidates. Everything below
         // the floor is uninteresting no matter how strange it looks.
         guard d.cpuPercent >= config.cpuFloorPercent else {
@@ -52,28 +53,40 @@ struct VerdictEngine {
         var score = 0.0
 
         // --- Gate: is this level of CPU unusual *for this program*? ---
-        // A program that always pegs a core is not news; one that never does is.
         //
-        // The reference is long-term history when there is any: a rolling window
-        // of recent samples is dragged upward by an episode that lasts longer
-        // than the window itself, so a process wedged since yesterday would come
-        // to look normal. A window built from *daily* medians cannot be moved by
-        // one bad day, which is exactly the case this tool exists for.
-        let reference = baseline.longTermCPU ?? baseline.cpuPercent
-        let referenceName = baseline.longTermCPU != nil
-            ? L("\(baseline.dailyHistory.count)-day norm",
-                "\(baseline.dailyHistory.count) 天来的常态")
-            : L("recent norm", "近期常态")
+        // Measured against the program's clustered states rather than a single
+        // centre, because most programs have more than one honest mode and a
+        // lone median lands in the empty gap between them.
+        //
+        // The rolling window is the fallback while too few samples exist to
+        // cluster. Long-term daily medians back it up: a short window is
+        // dragged upward by an episode that outlasts the window itself, so a
+        // process wedged since yesterday would come to look normal.
+        let fallback = baseline.longTermCPU ?? baseline.cpuPercent
+        let usingModes = !baseline.cpuModes.isEmpty
+        let cpuDeviation = baseline.cpuModes.deviation(of: d.cpuPercent)
+            ?? fallback.deviation(of: d.cpuPercent) ?? 0
 
-        let cpuDeviation = reference.deviation(of: d.cpuPercent) ?? 0
-        guard cpuDeviation > config.deviationThreshold else {
+        // Away from the keyboard the bar comes down: a runaway then burns for
+        // hours unseen, and there is nobody to interrupt with a false alarm.
+        let threshold = config.deviationThreshold * context.sensitivityScale
+        guard cpuDeviation > threshold else {
             return Verdict(pid: d.pid, command: d.command, judgment: .normal,
                            score: 0, reasons: [], cpuPercent: d.cpuPercent)
         }
-        if let median = reference.median {
-            reasons.append(String(format: L("CPU %.0f%% vs its %@ of %.1f%%",
-                                            "CPU %.0f%%，而它%@是 %.1f%%"),
-                                  d.cpuPercent, referenceName, median))
+
+        if usingModes, baseline.cpuModes.modes.count > 1 {
+            let states = baseline.cpuModes.modes
+                .map { String(format: "%.0f%%", $0.center) }
+                .joined(separator: " / ")
+            reasons.append(String(format: L("CPU %.0f%% — matches none of its usual states (%@)",
+                                            "CPU %.0f%% —— 不属于它已知的任何状态（%@）"),
+                                  d.cpuPercent, states as NSString))
+        } else if let center = baseline.cpuModes.nearestCenter(to: d.cpuPercent)
+                    ?? fallback.median {
+            reasons.append(String(format: L("CPU %.0f%% vs its usual %.1f%%",
+                                            "CPU %.0f%%，而它的常态是 %.1f%%"),
+                                  d.cpuPercent, center))
         }
         score += 0.35
 
@@ -127,8 +140,18 @@ struct VerdictEngine {
             score += 0.10
         }
 
+        // A hot process on an otherwise hot machine is weaker evidence: during
+        // a build everything is busy, and being one of many says little.
+        score -= context.crowdDiscount
+
+        if context.userIsAway {
+            reasons.append(L("nobody at the keyboard for \(Int(context.idleSeconds / 60)) min",
+                             "已 \(Int(context.idleSeconds / 60)) 分钟无人操作"))
+        }
+
         return Verdict(pid: d.pid, command: d.command,
                        judgment: score >= config.anomalyThreshold ? .anomalous : .normal,
-                       score: min(score, 1.0), reasons: reasons, cpuPercent: d.cpuPercent)
+                       score: max(0, min(score, 1.0)), reasons: reasons,
+                       cpuPercent: d.cpuPercent)
     }
 }

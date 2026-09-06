@@ -200,6 +200,27 @@ final class Engine: @unchecked Sendable {
         }
     }
 
+    /// Actions the user asks for directly.
+    ///
+    /// Deliberately not gated on `dryRun`: observe-only describes what the
+    /// watchdog does on its own, not what it will let you do by hand.
+    private var manual: Actions { Actions(dryRun: false) }
+
+    func demoteNow(pid: Int32) -> Bool {
+        queue.sync { manual.demote(pid: pid) }
+    }
+
+    func restoreNow(pid: Int32) -> Bool {
+        queue.sync {
+            incidents.removeValue(forKey: pid)
+            return manual.restorePriority(pid: pid)
+        }
+    }
+
+    func terminateNow(pid: Int32) -> Bool {
+        queue.sync { manual.terminate(pid: pid) }
+    }
+
     /// Programs with a baseline, most CPU-hungry first.
     func knownProgramNames() -> [String] {
         queue.sync {
@@ -242,6 +263,9 @@ final class Engine: @unchecked Sendable {
         guard let last = previous else { return }
 
         let deltas = snapshot.delta(since: last)
+        let context = JudgementContext.current(
+            systemBusy: state.vitals.cpuBusy,
+            onBattery: state.vitals.battery.map { !$0.isPluggedIn } ?? false)
         var rows: [ProcessRow] = []
         var liveNow = Set<Int32>()
 
@@ -256,14 +280,20 @@ final class Engine: @unchecked Sendable {
             if let reason = Lifelines.isProtected(delta.command) {
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
-                                       usualCPUPercent: nil, recentCPU: trail,
+                                       usualCPUPercent: nil,
+                                       energyImpact: delta.energyImpact,
+                                       netBytesPerSecond: Double(delta.netBytes) / delta.interval,
+                                       recentCPU: trail,
                                        status: .protected(reason.rawValue), detail: ""))
                 continue
             }
             if config.neverTouch.contains(delta.command) {
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
-                                       usualCPUPercent: nil, recentCPU: trail,
+                                       usualCPUPercent: nil,
+                                       energyImpact: delta.energyImpact,
+                                       netBytesPerSecond: Double(delta.netBytes) / delta.interval,
+                                       recentCPU: trail,
                                        status: .protected("excluded by you"), detail: ""))
                 continue
             }
@@ -271,7 +301,8 @@ final class Engine: @unchecked Sendable {
             let baseline = store.baseline(for: delta.command)
             trackBurst(delta, baseline: baseline)
             let verdict = engine.judge(delta, baseline: baseline,
-                                       currentBurstSeconds: currentBurstSeconds(delta.pid))
+                                       currentBurstSeconds: currentBurstSeconds(delta.pid),
+                                       context: context)
 
             let usual = (baseline?.longTermCPU ?? baseline?.cpuPercent)?.median
 
@@ -280,7 +311,10 @@ final class Engine: @unchecked Sendable {
                 handleAnomaly(verdict, delta: delta)
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
-                                       usualCPUPercent: usual, recentCPU: trail,
+                                       usualCPUPercent: usual,
+                                       energyImpact: delta.energyImpact,
+                                       netBytesPerSecond: Double(delta.netBytes) / delta.interval,
+                                       recentCPU: trail,
                                        status: .anomalous(score: verdict.score),
                                        detail: verdict.reasons.joined(separator: " · ")))
             case .learning:
@@ -288,7 +322,10 @@ final class Engine: @unchecked Sendable {
                 store.observe(delta)
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
-                                       usualCPUPercent: usual, recentCPU: trail,
+                                       usualCPUPercent: usual,
+                                       energyImpact: delta.energyImpact,
+                                       netBytesPerSecond: Double(delta.netBytes) / delta.interval,
+                                       recentCPU: trail,
                                        status: .learning(samples: baseline?.cpuPercent.count ?? 0,
                                                          needed: config.minimumSamples),
                                        detail: ""))
@@ -297,7 +334,10 @@ final class Engine: @unchecked Sendable {
                 store.observe(delta)
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
-                                       usualCPUPercent: usual, recentCPU: trail,
+                                       usualCPUPercent: usual,
+                                       energyImpact: delta.energyImpact,
+                                       netBytesPerSecond: Double(delta.netBytes) / delta.interval,
+                                       recentCPU: trail,
                                        status: .normal, detail: ""))
             }
         }

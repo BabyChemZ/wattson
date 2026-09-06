@@ -171,6 +171,35 @@ final class AppModel: ObservableObject {
         return L("on battery", "使用电池")
     }
 
+    /// Headline runtime figure: time left on battery, or time to full on power.
+    func runtimeLabel(_ b: BatteryInfo) -> String {
+        b.isPluggedIn ? L("Until full", "充满还需") : L("Time left", "剩余可用")
+    }
+
+    func runtimeValue(_ b: BatteryInfo) -> String {
+        if b.isPluggedIn {
+            guard b.isCharging else { return L("Full", "已充满") }
+            return b.minutesToFull.map(formatMinutes) ?? L("estimating", "计算中")
+        }
+        return b.timeRemainingMinutes.map(formatMinutes) ?? L("estimating", "计算中")
+    }
+
+    func runtimeCaption(_ b: BatteryInfo) -> String {
+        if b.isPluggedIn {
+            return b.isCharging ? L("charging", "充电中") : L("on power", "已接电源")
+        }
+        // Watts out is the number that decides how fast the estimate falls.
+        return String(format: L("drawing %.1f W", "放电 %.1f W"), abs(b.watts))
+    }
+
+    /// Direction and size of the current power flow, in words.
+    func powerFlowCaption(_ b: BatteryInfo) -> String {
+        if b.isCharging { return String(format: L("charging at %.1f W", "以 %.1f W 充电"),
+                                        abs(b.watts)) }
+        if b.isPluggedIn { return L("on power", "已接电源") }
+        return String(format: L("%.1f W from battery", "电池供电 %.1f W"), abs(b.watts))
+    }
+
     func batteryRows(_ b: BatteryInfo) -> [(String, String)] {
         var rows: [(String, String)] = []
         rows.append((L("Design capacity", "设计容量"), "\(b.designCapacityMAh) mAh"))
@@ -185,6 +214,58 @@ final class AppModel: ObservableObject {
                                   : b.isHealthy ? L("normal", "正常")
                                                 : L("worn", "已老化")))
         return rows
+    }
+
+    // MARK: Manual control
+
+    func demote(_ row: ProcessRow) { _ = engine.demoteNow(pid: row.pid) }
+    func restore(_ row: ProcessRow) { _ = engine.restoreNow(pid: row.pid) }
+
+    /// Quitting something is irreversible from the app's side, so it asks first
+    /// and names what it is about to close.
+    func confirmTerminate(_ row: ProcessRow) {
+        let alert = NSAlert()
+        alert.messageText = L("Quit \(row.command)?", "结束 \(row.command)？")
+        alert.informativeText = L(
+            "The process is asked to exit. Anything it has not saved may be lost.",
+            "将请求该进程退出。它尚未保存的内容可能会丢失。")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("Quit", "结束"))
+        alert.addButton(withTitle: L("Cancel", "取消"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        _ = engine.terminateNow(pid: row.pid)
+    }
+
+    /// Add to the never-touch list so the watchdog stops considering it.
+    func exclude(_ row: ProcessRow) {
+        guard !config.neverTouch.contains(row.command) else { return }
+        config.neverTouch.append(row.command)
+    }
+
+    func include(_ row: ProcessRow) {
+        config.neverTouch.removeAll { $0 == row.command }
+    }
+
+    func isExcluded(_ row: ProcessRow) -> Bool {
+        config.neverTouch.contains(row.command)
+    }
+
+    /// Whether Wattson will act on this process at all.
+    func isProtected(_ row: ProcessRow) -> Bool {
+        if case .protected = row.status { return true }
+        return false
+    }
+
+    // MARK: Rankings
+
+    func topByEnergy(_ count: Int) -> [ProcessRow] {
+        Array(state.rows.filter { $0.energyImpact > 0 }
+            .sorted { $0.energyImpact > $1.energyImpact }.prefix(count))
+    }
+
+    func topByNetwork(_ count: Int) -> [ProcessRow] {
+        Array(state.rows.filter { $0.netBytesPerSecond > 512 }
+            .sorted { $0.netBytesPerSecond > $1.netBytesPerSecond }.prefix(count))
     }
 
     // MARK: Actions
@@ -275,26 +356,32 @@ final class AppModel: ObservableObject {
         state.rows = [
                 ProcessRow(pid: 1, command: "verge-mihomo", cpuPercent: 402.1,
                            memBytes: 320_000_000, usualCPUPercent: 1.5,
+                           energyImpact: 128.0, netBytesPerSecond: 0.0,
                            recentCPU: [1.2, 1.4, 1.1, 1.6, 88, 210, 380, 402, 399, 402],
                            status: .anomalous(score: 0.9),
                            detail: L("network throughput collapsed to 0% of normal",
                                      "网络吞吐跌到正常水平的 0%")),
                 ProcessRow(pid: 2, command: "Codex (Service)", cpuPercent: 118.3,
                            memBytes: 1_900_000_000, usualCPUPercent: 96.2,
+                           energyImpact: 44.2, netBytesPerSecond: 180000.0,
                            recentCPU: trail(100, 30, 10), status: .normal, detail: ""),
                 ProcessRow(pid: 3, command: "Google Chrome Helper (Renderer)",
                            cpuPercent: 34.6, memBytes: 780_000_000, usualCPUPercent: 28.1,
+                           energyImpact: 18.5, netBytesPerSecond: 940000.0,
                            recentCPU: trail(30, 18, 10), status: .normal, detail: ""),
                 ProcessRow(pid: 4, command: "Obsidian", cpuPercent: 12.4,
                            memBytes: 410_000_000, usualCPUPercent: nil,
+                           energyImpact: 5.1, netBytesPerSecond: 2400.0,
                            recentCPU: trail(11, 5, 10),
                            status: .learning(samples: 18, needed: 40), detail: ""),
                 ProcessRow(pid: 5, command: "WindowServer", cpuPercent: 5.1,
                            memBytes: 620_000_000, usualCPUPercent: nil,
+                           energyImpact: 24.0, netBytesPerSecond: 0.0,
                            recentCPU: trail(5, 2, 10),
                            status: .protected("system-critical"), detail: ""),
                 ProcessRow(pid: 6, command: "tailscaled", cpuPercent: 1.2,
                            memBytes: 90_000_000, usualCPUPercent: nil,
+                           energyImpact: 0.9, netBytesPerSecond: 41000.0,
                            recentCPU: trail(1, 0.6, 10),
                            status: .protected("remote-access lifeline"), detail: ""),
         ]

@@ -22,6 +22,7 @@ struct BatteryInfo: Equatable {
     var currentCapacityMAh = 0
     var nominalCapacityMAh = 0
     var timeRemainingMinutes: Int?
+    var minutesToFull: Int?
     var hasFailure = false
 
     /// Watts flowing in (positive) or out (negative).
@@ -67,9 +68,23 @@ enum BatteryProbe {
             info.healthPercent = Double(info.nominalCapacityMAh)
                 / Double(info.designCapacityMAh) * 100
         }
-        // 65535 is the sentinel for "still calculating".
-        if let minutes = int("TimeRemaining"), minutes > 0, minutes < 65535 {
-            info.timeRemainingMinutes = minutes
+        // 65535 means "still calculating"; the averaged fields settle sooner
+        // than TimeRemaining does.
+        func minutes(_ keys: [String]) -> Int? {
+            for key in keys {
+                if let value = int(key), value > 0, value < 65535 { return value }
+            }
+            return nil
+        }
+        info.timeRemainingMinutes = minutes(["AvgTimeToEmpty", "TimeRemaining",
+                                             "InstantTimeToEmpty"])
+        info.minutesToFull = minutes(["AvgTimeToFull"])
+
+        // When the firmware has not settled on an estimate, derive one from the
+        // charge left and the current draw.
+        if info.timeRemainingMinutes == nil, !info.isPluggedIn, info.amperage < -0.01 {
+            let hours = Double(info.currentCapacityMAh) / (abs(info.amperage) * 1000)
+            if hours.isFinite, hours > 0 { info.timeRemainingMinutes = Int(hours * 60) }
         }
         return info
     }

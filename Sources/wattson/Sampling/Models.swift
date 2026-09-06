@@ -24,6 +24,10 @@ struct ProcSample {
     let intervalInstructions: UInt64
     let intervalCycles: UInt64
 
+    /// Composite energy score from `top`, matching Activity Monitor's
+    /// Energy Impact. Already an interval measure — do not difference it.
+    var energyImpact: Double = 0
+
     var cumulativeNetBytesIn: UInt64 = 0
     var cumulativeNetBytesOut: UInt64 = 0
 
@@ -54,6 +58,8 @@ struct ProcDelta {
 
     let intervalInstructions: UInt64
     let intervalCycles: UInt64
+    /// Composite energy score matching Activity Monitor's Energy Impact.
+    let energyImpact: Double
 
     /// Percent of one core. 100 means one core fully saturated; 800 means eight.
     var cpuPercent: Double { interval > 0 ? (cpuSeconds / interval) * 100 : 0 }
@@ -129,9 +135,10 @@ extension Snapshot {
                 syscalls: monotonicDelta(now.cumulativeSyscalls, before.cumulativeSyscalls),
                 netBytes: monotonicDelta(now.cumulativeNetBytesIn, before.cumulativeNetBytesIn)
                         + monotonicDelta(now.cumulativeNetBytesOut, before.cumulativeNetBytesOut),
-                // Already an interval measurement — pass through, never difference.
+                // Already interval measurements — pass through, never difference.
                 intervalInstructions: now.intervalInstructions,
-                intervalCycles: now.intervalCycles
+                intervalCycles: now.intervalCycles,
+                energyImpact: now.energyImpact
             )
         }
     }

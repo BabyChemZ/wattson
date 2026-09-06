@@ -83,6 +83,35 @@ case "diag":
     }
     exit(0)
 
+case "testmodes":
+    // Internal: check the clustering against a program with two honest states.
+    var bimodal: [Double] = []
+    for i in 0..<200 {
+        bimodal.append(i % 3 == 0 ? Double.random(in: 88...112)   // compiling
+                                  : Double.random(in: 1...7))     // idle
+    }
+    let modes = BehaviorModes.fit(bimodal)
+    print("fitted \(modes.modes.count) mode(s):")
+    for mode in modes.modes {
+        print(String(format: "  centre %6.1f%%  spread %5.2f  weight %.0f%%",
+                     mode.center, mode.spread, mode.weight * 100))
+    }
+
+    var single = RollingWindow()
+    for value in bimodal { single.append(value) }
+
+    print("\n\(("reading").padding(toLength: 10, withPad: " ", startingAt: 0))"
+        + "single-centre    clustered    verdict")
+    for probe: Double in [4, 30, 100, 260, 402] {
+        let old = single.deviation(of: probe) ?? 0
+        let new = modes.deviation(of: probe) ?? 0
+        let flaggedOld = abs(old) > 3.5 ? "FLAG" : "ok"
+        let flaggedNew = new > 3.5 ? "FLAG" : "ok"
+        print(String(format: "%6.0f%%    %8.1f (%@)  %8.1f (%@)",
+                     probe, old, flaggedOld as NSString, new, flaggedNew as NSString))
+    }
+    exit(0)
+
 case "install":
     Install.install()
 

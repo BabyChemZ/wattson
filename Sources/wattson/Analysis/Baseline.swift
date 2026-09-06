@@ -35,11 +35,30 @@ struct BehaviorBaseline: Codable {
     /// survives a process staying wedged for a week.
     var dailyHistory: [DailySummary] = []
 
+    /// The program's distinct normal states. Refitted periodically rather than
+    /// every sample: clustering is far more expensive than appending, and a
+    /// mode structure does not change meaningfully between two readings.
+    var cpuModes = BehaviorModes()
+    private var samplesSinceFit = 0
+
     var lastSeen: Date = .init()
+
+    init(command: String) { self.command = command }
 
     /// Record a completed high-CPU episode.
     mutating func observeBurst(seconds: Double) {
         burstSeconds.append(seconds)
+    }
+
+    /// Recent readings plus each day's typical and peak level, so a mode the
+    /// program only enters occasionally still survives in the fit.
+    private func cpuSamplesForFitting() -> [Double] {
+        var samples = cpuPercent.allValues
+        for day in dailyHistory {
+            samples.append(day.cpuMedian)
+            samples.append(day.cpuP95)
+        }
+        return samples
     }
 
     /// The level above which this program counts as "running hot for itself".
@@ -57,6 +76,12 @@ struct BehaviorBaseline: Codable {
         if let v = d.netBytesPerCPUSecond { netBytesPerCPUSecond.append(v) }
         if let v = d.ipc { ipc.append(v) }
         lastSeen = Date()
+
+        samplesSinceFit += 1
+        if cpuModes.isEmpty || samplesSinceFit >= 25 {
+            cpuModes = BehaviorModes.fit(cpuSamplesForFitting())
+            samplesSinceFit = 0
+        }
     }
 }
 
@@ -117,6 +142,7 @@ struct RollingWindow: Codable {
     }
 
     var maximum: Double? { values.max() }
+    var allValues: [Double] { values }
 
     /// Modified z-score. The 0.6745 factor rescales MAD so that, for normally
     /// distributed data, the result is comparable to an ordinary z-score.

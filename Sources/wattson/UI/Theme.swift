@@ -1,43 +1,45 @@
 import SwiftUI
 
-/// The visual language: a tinted cream canvas, warm coral accent, serif display
-/// type over a humanist sans. Colours are declared as dynamic NSColors so a
-/// single definition serves both appearances and follows the system live.
+/// Colours are taken from AppKit's semantic palette rather than hard-coded.
+///
+/// That is what makes the app look native in both appearances without a second
+/// palette to maintain: `labelColor` and friends already carry Apple's contrast
+/// decisions, and `controlAccentColor` follows whatever accent the user picked
+/// in System Settings. The only fixed hues are the functional ones below, where
+/// a specific colour carries meaning.
 extension Color {
-    static let canvas       = dynamic(light: 0xFAF9F5, dark: 0x1F1E1D)
-    static let surface      = dynamic(light: 0xFFFFFF, dark: 0x2E2D2A)
-    static let surfaceSunken = dynamic(light: 0xF2F0E9, dark: 0x252421)
-    static let hairline     = dynamic(light: 0xE8E4DA, dark: 0x383632)
-    static let ink          = dynamic(light: 0x1F1E1D, dark: 0xF2F0EA)
-    static let inkMuted     = dynamic(light: 0x76726A, dark: 0x9C978D)
-    static let inkFaint     = dynamic(light: 0xA8A399, dark: 0x6E6A63)
-    /// The single accent. Used for anomalies too — a warm coral reads as
-    /// "attention" without the alarm-clock quality of a saturated red.
-    static let accent       = dynamic(light: 0xD97757, dark: 0xE08A6C)
-    static let accentWash   = dynamic(light: 0xF7EBE5, dark: 0x3A2E29)
+    // Surfaces
+    static let canvas       = Color(nsColor: .windowBackgroundColor)
+    static let surface      = Color(nsColor: .controlBackgroundColor)
+    static let surfaceSunken = Color(nsColor: .underPageBackgroundColor)
+    static let hairline     = Color(nsColor: .separatorColor)
 
-    private static func dynamic(light: UInt32, dark: UInt32) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                ? NSColor(rgb: dark) : NSColor(rgb: light)
-        })
-    }
-}
+    // Type
+    static let ink          = Color(nsColor: .labelColor)
+    static let inkMuted     = Color(nsColor: .secondaryLabelColor)
+    static let inkFaint     = Color(nsColor: .tertiaryLabelColor)
 
-extension NSColor {
-    convenience init(rgb: UInt32) {
-        self.init(srgbRed: Double((rgb >> 16) & 0xFF) / 255,
-                  green: Double((rgb >> 8) & 0xFF) / 255,
-                  blue: Double(rgb & 0xFF) / 255,
-                  alpha: 1)
-    }
+    /// The user's chosen system accent.
+    static let accent       = Color(nsColor: .controlAccentColor)
+    static let accentWash   = Color(nsColor: .controlAccentColor).opacity(0.12)
+
+    // Functional hues. Each one means something specific and is used only for
+    // that meaning, so a glance at a colour is already information.
+    static let cpuTint      = Color(nsColor: .systemBlue)
+    static let systemTint   = Color(nsColor: .systemRed)      // kernel/system time
+    static let memoryTint   = Color(nsColor: .systemPurple)
+    static let swapTint     = Color(nsColor: .systemPink)
+    static let alertTint    = Color(nsColor: .systemOrange)
+    static let dangerTint   = Color(nsColor: .systemRed)
+    static let healthyTint  = Color(nsColor: .systemGreen)
+    static let coreTint     = Color(nsColor: .systemTeal)
+    static let idleTint     = Color(nsColor: .quaternaryLabelColor)
 }
 
 extension Font {
-    /// Display face. `.serif` resolves to New York, the closest system stand-in
-    /// for the brand's Copernicus.
-    static func display(_ size: CGFloat, _ weight: Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .serif)
+    /// Display face for page and card titles.
+    static func display(_ size: CGFloat, _ weight: Weight = .semibold) -> Font {
+        .system(size: size, weight: weight)
     }
     static func ui(_ size: CGFloat, _ weight: Weight = .regular) -> Font {
         .system(size: size, weight: weight)
@@ -48,13 +50,9 @@ extension Font {
     }
 }
 
-/// A hairline rule. Deliberately a single sub-pixel line rather than a divider
-/// with padding: the layout's breathing room comes from whitespace, not borders.
 struct Hairline: View {
     var body: some View {
-        Rectangle()
-            .fill(Color.hairline)
-            .frame(height: 0.5)
+        Rectangle().fill(Color.hairline).frame(height: 0.5)
     }
 }
 
@@ -63,8 +61,45 @@ struct SectionLabel: View {
     let text: String
     var body: some View {
         Text(text.uppercased())
-            .font(.ui(10, .medium))
-            .tracking(0.8)
+            .font(.ui(10, .semibold))
+            .tracking(0.6)
             .foregroundStyle(Color.inkFaint)
+    }
+}
+
+/// A titled content card, the basic unit of every page.
+struct Card<Content: View>: View {
+    var title: String?
+    var trailing: AnyView?
+    @ViewBuilder var content: Content
+
+    init(title: String? = nil, trailing: AnyView? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.trailing = trailing
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if title != nil || trailing != nil {
+                HStack {
+                    if let title {
+                        Text(title)
+                            .font(.ui(12.5, .semibold))
+                            .foregroundStyle(Color.ink)
+                    }
+                    Spacer()
+                    if let trailing { trailing }
+                }
+            }
+            content
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.hairline, lineWidth: 0.5))
     }
 }

@@ -7,10 +7,15 @@ Wattson learns what each program on your Mac normally does — over months, not
 minutes — and notices when one stops behaving like itself.
 
 <p align="center">
-  <img src="docs/panel-light-en.png" width="380" alt="Wattson menu bar panel">
+  <img src="docs/overview-dark-en.png" width="820" alt="Wattson dashboard">
 </p>
 
-A menu bar app. English and 简体中文, light and dark, no configuration to get
+A full monitor and a watchdog in one: CPU, memory, battery, network and disk at
+the depth you would expect from a system monitor — plus the thing no monitor
+does, which is knowing what "normal" looks like for each program and telling you
+when one departs from it.
+
+Native look in both appearances, English and 简体中文, no configuration to get
 started. [中文说明](README.zh-CN.md)
 
 ```
@@ -136,6 +141,18 @@ These are never demoted, never restarted, never scored. Add your own in
 **It also starts in observe-only mode.** For the first days it reports what it
 *would* have done and changes nothing. Set `"dryRun": false` once the verdicts
 look right to you.
+
+## What it shows
+
+| | |
+|---|---|
+| <img src="docs/cpu-dark-en.png" width="400"> | **CPU** — busy/user/system split, load history, and per-core load with the efficiency and performance clusters separated. That split matters here: confining a process to the E-cores is the first thing Wattson does about a runaway, so you can watch the intervention work. |
+| <img src="docs/battery-dark-en.png" width="400"> | **Battery** — charge, health against design capacity, cycle count, voltage, current, draw, and **temperature with its own history**. Lithium packs age fastest when held hot, and a process stuck at full CPU while you are away keeps the pack warm for hours. That is the damage this app exists to prevent, so the record of it is a first-class page. |
+| <img src="docs/memory-dark-en.png" width="400"> | **Memory** — real pressure level from the kernel, split into app / wired / compressed / free, with swap and the largest resident processes. |
+| <img src="docs/history-dark-en.png" width="400"> | **History** — every program's learned baseline: usual CPU, spread, peak, longest hot run, usual network and syscall rates, and a bar per day with today marked against it. This is the evidence behind every judgement the app makes. |
+
+Everything above comes from stock `top`, `nettop`, `sysctl` and the IO registry.
+No root, no kernel extension, no helper daemon.
 
 ## Settings
 

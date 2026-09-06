@@ -14,7 +14,8 @@ struct Sampler {
         "pid,command,time,csw,idlew,sysmach,sysbsd,instrs,cycles,mem"
 
     func snapshot() -> Snapshot? {
-        guard var processes = sampleProcesses() else { return nil }
+        guard let (processTable, vitals) = sampleProcesses() else { return nil }
+        var processes = processTable
         // Stamp the moment `top` finished: that is when the CPU-time counters were
         // read. Anything sampled afterwards must not widen the measured window,
         // or every process appears to use less CPU than it really did.
@@ -29,14 +30,14 @@ struct Sampler {
             }
         }
 
-        return Snapshot(takenAt: takenAt, processes: processes)
+        return Snapshot(takenAt: takenAt, processes: processes, vitals: vitals)
     }
 
     // MARK: - top
 
     /// `-l 2` is required, not stylistic: INSTRS and CYCLES stay zero unless top
     /// has two frames to diff. We read only the second frame.
-    private func sampleProcesses() -> [Int32: ProcSample]? {
+    private func sampleProcesses() -> ([Int32: ProcSample], SystemVitals)? {
         guard let output = Shell.run("/usr/bin/top", [
             "-l", "2", "-s", "1",
             "-n", String(topProcessCount),
@@ -52,13 +53,16 @@ struct Sampler {
             return nil
         }
 
+        // Everything before the header is the machine-wide summary block.
+        let vitals = SystemVitals.parse(Array(lines[..<lastHeader]))
+
         var result: [Int32: ProcSample] = [:]
         for line in lines[lines.index(after: lastHeader)...] {
             if let sample = Self.parseTopRow(String(line)) {
                 result[sample.pid] = sample
             }
         }
-        return result.isEmpty ? nil : result
+        return result.isEmpty ? nil : (result, vitals)
     }
 
     /// Command names contain spaces ("Codex (Renderer)"), so the row is parsed

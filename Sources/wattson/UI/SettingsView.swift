@@ -152,25 +152,6 @@ extension SettingsView {
 
 // MARK: - Building blocks
 
-struct Card<Content: View>: View {
-    let title: String
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionLabel(text: title)
-            VStack(alignment: .leading, spacing: 14) { content }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.hairline, lineWidth: 0.5))
-        }
-    }
-}
-
 struct Field: View {
     let label: String
     let hint: String

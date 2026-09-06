@@ -33,6 +33,7 @@ struct ProcSample {
 struct Snapshot {
     let takenAt: Date
     let processes: [Int32: ProcSample]
+    var vitals = SystemVitals()
 }
 
 /// What changed for one process between two snapshots. The verdict engine reasons

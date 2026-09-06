@@ -40,6 +40,19 @@ final class Engine: @unchecked Sendable {
     private var previous: Snapshot?
     private var incidents: [Int32: Incident] = [:]
     private var burstStarted: [Int32: Date] = [:]
+    /// Recent CPU readings per process, for the sparklines.
+    private var cpuTrail: [Int32: [Double]] = [:]
+    private static let trailLength = 40
+
+    private let coreSampler = CoreSampler()
+    /// Machine-wide history for the load chart. 240 samples is two hours at the
+    /// default tick.
+    private var systemCPUTrail: [Double] = []
+    private var systemMemoryTrail: [Double] = []
+    private static let systemTrailLength = 240
+    private var previousNetCounters: (inBytes: UInt64, outBytes: UInt64)?
+    private var temperatureTrail: [Double] = []
+    private var powerTrail: [Double] = []
     private var restartTimes: [String: [Date]] = [:]
     private var ticksSinceSave = 0
     private var recentEvents: [Event] = []
@@ -88,6 +101,39 @@ final class Engine: @unchecked Sendable {
         store.save()
     }
 
+    /// Everything learned about one program, for the detail view.
+    /// Answers the question the whole tool is built around: is what this
+    /// program is doing right now normal *for it*?
+    func detail(for command: String, pid: Int32?) -> ProgramDetail? {
+        queue.sync {
+            guard let b = store.baseline(for: command) else { return nil }
+            return ProgramDetail(
+                command: command,
+                samples: b.cpuPercent.count,
+                usualCPU: (b.longTermCPU ?? b.cpuPercent).median,
+                spread: b.cpuPercent.mad,
+                peakCPU: b.cpuPercent.maximum,
+                usualNetBytes: b.netBytesPerCPUSecond.median,
+                usualSyscalls: b.syscallsPerCPUSecond.median,
+                usualIPC: b.ipc.median,
+                longestBurstSeconds: b.longestBurstEver,
+                daily: b.dailyHistory.map {
+                    DailyPoint(day: $0.day, median: $0.cpuMedian, peak: $0.cpuMax)
+                },
+                recent: pid.flatMap { cpuTrail[$0] } ?? [],
+                daysRecorded: b.dailyHistory.count)
+        }
+    }
+
+    /// Programs with a baseline, most CPU-hungry first.
+    func knownProgramNames() -> [String] {
+        queue.sync {
+            store.baselines.values
+                .sorted { ($0.cpuPercent.median ?? 0) > ($1.cpuPercent.median ?? 0) }
+                .map(\.command)
+        }
+    }
+
     // MARK: - The tick
 
     private func tick() {
@@ -112,15 +158,22 @@ final class Engine: @unchecked Sendable {
         for delta in deltas {
             liveNow.insert(delta.pid)
 
+            var trail = cpuTrail[delta.pid] ?? []
+            trail.append(delta.cpuPercent)
+            if trail.count > Self.trailLength { trail.removeFirst(trail.count - Self.trailLength) }
+            cpuTrail[delta.pid] = trail
+
             if let reason = Lifelines.isProtected(delta.command) {
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
-                                       cpuPercent: delta.cpuPercent, usualCPUPercent: nil,
+                                       cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
+                                       usualCPUPercent: nil, recentCPU: trail,
                                        status: .protected(reason.rawValue), detail: ""))
                 continue
             }
             if config.neverTouch.contains(delta.command) {
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
-                                       cpuPercent: delta.cpuPercent, usualCPUPercent: nil,
+                                       cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
+                                       usualCPUPercent: nil, recentCPU: trail,
                                        status: .protected("excluded by you"), detail: ""))
                 continue
             }
@@ -136,14 +189,16 @@ final class Engine: @unchecked Sendable {
             case .anomalous:
                 handleAnomaly(verdict, delta: delta)
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
-                                       cpuPercent: delta.cpuPercent, usualCPUPercent: usual,
+                                       cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
+                                       usualCPUPercent: usual, recentCPU: trail,
                                        status: .anomalous(score: verdict.score),
                                        detail: verdict.reasons.joined(separator: " · ")))
             case .learning:
                 resolveIfNeeded(pid: delta.pid, command: delta.command)
                 store.observe(delta)
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
-                                       cpuPercent: delta.cpuPercent, usualCPUPercent: usual,
+                                       cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
+                                       usualCPUPercent: usual, recentCPU: trail,
                                        status: .learning(samples: baseline?.cpuPercent.count ?? 0,
                                                          needed: config.minimumSamples),
                                        detail: ""))
@@ -151,7 +206,8 @@ final class Engine: @unchecked Sendable {
                 resolveIfNeeded(pid: delta.pid, command: delta.command)
                 store.observe(delta)
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
-                                       cpuPercent: delta.cpuPercent, usualCPUPercent: usual,
+                                       cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
+                                       usualCPUPercent: usual, recentCPU: trail,
                                        status: .normal, detail: ""))
             }
         }
@@ -170,7 +226,54 @@ final class Engine: @unchecked Sendable {
                 : $0.cpuPercent > $1.cpuPercent
         }
 
+        let cores = coreSampler.sample()
+
+        // Cheap native probes, gathered every tick alongside the process table.
+        var vitals = snapshot.vitals
+        vitals.battery = BatteryProbe.read()
+        vitals.memoryPressure = SystemProbe.memoryPressure()
+        vitals.disk = SystemProbe.disk()
+
+        let counters = SystemProbe.networkCounters()
+        if let previousCounters = previousNetCounters {
+            let elapsed = max(snapshot.takenAt.timeIntervalSince(last.takenAt), 0.001)
+            vitals.network = NetworkThroughput(
+                bytesInPerSecond: Double(monotonicDelta(counters.inBytes,
+                                                        previousCounters.inBytes)) / elapsed,
+                bytesOutPerSecond: Double(monotonicDelta(counters.outBytes,
+                                                         previousCounters.outBytes)) / elapsed,
+                totalBytesIn: counters.inBytes, totalBytesOut: counters.outBytes)
+        }
+        previousNetCounters = counters
+
+        systemCPUTrail.append(vitals.cpuBusy)
+        if systemCPUTrail.count > Self.systemTrailLength {
+            systemCPUTrail.removeFirst(systemCPUTrail.count - Self.systemTrailLength)
+        }
+        systemMemoryTrail.append(vitals.memUsedFraction * 100)
+        if systemMemoryTrail.count > Self.systemTrailLength {
+            systemMemoryTrail.removeFirst(systemMemoryTrail.count - Self.systemTrailLength)
+        }
+        if let battery = vitals.battery {
+            temperatureTrail.append(battery.temperature)
+            powerTrail.append(abs(battery.watts))
+            if temperatureTrail.count > Self.systemTrailLength {
+                temperatureTrail.removeFirst(temperatureTrail.count - Self.systemTrailLength)
+            }
+            if powerTrail.count > Self.systemTrailLength {
+                powerTrail.removeFirst(powerTrail.count - Self.systemTrailLength)
+            }
+        }
+
         publish {
+            $0.vitals = vitals
+            if !cores.isEmpty { $0.cores = cores }
+            $0.efficiencyCoreCount = self.coreSampler.efficiencyCoreCount
+            $0.performanceLevelName = self.coreSampler.performanceLevelName
+            $0.cpuTrail = self.systemCPUTrail
+            $0.memoryTrail = self.systemMemoryTrail
+            $0.temperatureTrail = self.temperatureTrail
+            $0.powerTrail = self.powerTrail
             $0.rows = sorted
             $0.events = self.recentEvents
             $0.learnedPrograms = trained
@@ -279,6 +382,9 @@ final class Engine: @unchecked Sendable {
         }
         for pid in burstStarted.keys where !stillAlive.contains(pid) {
             burstStarted.removeValue(forKey: pid)
+        }
+        for pid in cpuTrail.keys where !stillAlive.contains(pid) {
+            cpuTrail.removeValue(forKey: pid)
         }
     }
 

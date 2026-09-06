@@ -6,8 +6,11 @@ struct ProcessRow: Identifiable, Equatable {
     let pid: Int32
     let command: String
     let cpuPercent: Double
+    let memBytes: UInt64
     /// What this program's CPU usually looks like, once known.
     let usualCPUPercent: Double?
+    /// Recent samples, oldest first — enough to draw a sparkline.
+    let recentCPU: [Double]
     let status: RowStatus
     let detail: String
 }
@@ -35,12 +38,46 @@ struct Event: Identifiable, Equatable {
     let headline: String
     let reasons: [String]
     let stage: String
-    /// True when the tool only reported and changed nothing.
     let observedOnly: Bool
 }
 
-/// Everything the UI renders, republished after each tick.
+/// One day in a program's recorded life, for the history chart.
+struct DailyPoint: Identifiable, Equatable {
+    var id: String { day }
+    let day: String
+    let median: Double
+    let peak: Double
+}
+
+/// Everything known about one program — the answer to "is this normal for it?"
+struct ProgramDetail: Equatable {
+    let command: String
+    let samples: Int
+    let usualCPU: Double?
+    let spread: Double?
+    let peakCPU: Double?
+    let usualNetBytes: Double?
+    let usualSyscalls: Double?
+    let usualIPC: Double?
+    let longestBurstSeconds: Double?
+    let daily: [DailyPoint]
+    let recent: [Double]
+    let daysRecorded: Int
+}
+
 struct EngineState: Equatable {
+    var vitals = SystemVitals()
+    /// Per-core utilisation, efficiency cores first.
+    var cores: [CoreLoad] = []
+    var efficiencyCoreCount = 0
+    var performanceLevelName = "Performance"
+    /// Machine-wide history, oldest first, for the load chart.
+    var cpuTrail: [Double] = []
+    var memoryTrail: [Double] = []
+    /// Battery temperature over time. The whole point of the app is preventing
+    /// long hot stretches, so this is the record of whether it worked.
+    var temperatureTrail: [Double] = []
+    var powerTrail: [Double] = []
     var rows: [ProcessRow] = []
     var events: [Event] = []
     var learnedPrograms = 0
@@ -48,6 +85,7 @@ struct EngineState: Equatable {
     var lastTick: Date?
     var isSampling = false
     var observeOnly = true
+    var startedAt = Date()
 
     var anomalyCount: Int {
         rows.filter { if case .anomalous = $0.status { return true } else { return false } }.count

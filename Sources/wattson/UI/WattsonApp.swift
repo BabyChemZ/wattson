@@ -47,13 +47,24 @@ enum SettingsWindow {
 enum PreviewWindows {
     private static var windows: [NSWindow] = []
 
-    static func show(appearance: String? = nil, language: String? = nil) {
+    static func show(appearance: String? = nil, language: String? = nil,
+                     page: Page = .overview) {
         if let language { activeLanguage = language == "zh" ? .chinese : .english }
         let model = AppModel.preview()
+        model.page = page
         NSApplication.shared.setActivationPolicy(.regular)
         if let appearance {
             NSApp.appearance = NSAppearance(named: appearance == "light" ? .aqua : .darkAqua)
         }
+
+        let mainHost = NSHostingController(rootView: MainWindowView(model: model))
+        let main = NSWindow(contentViewController: mainHost)
+        main.title = "Wattson"
+        main.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+        main.titlebarAppearsTransparent = true
+        main.setContentSize(NSSize(width: 940, height: 680))
+        main.center()
+        main.makeKeyAndOrderFront(nil)
 
         let panelHost = NSHostingController(rootView: PanelView(model: model))
         let panel = NSWindow(contentViewController: panelHost)
@@ -71,11 +82,11 @@ enum PreviewWindows {
         settings.title = "Settings"
         settings.styleMask = [.titled, .closable, .fullSizeContentView]
         blend(settings)
-        settings.setContentSize(settingsHost.view.fittingSize)
-        settings.setFrameOrigin(NSPoint(x: 600, y: 120))
+        settings.setContentSize(NSSize(width: 460, height: 620))
+        settings.setFrameOrigin(NSPoint(x: 40, y: 60))
         settings.makeKeyAndOrderFront(nil)
 
-        windows = [panel, settings]
+        windows = [main, panel, settings]
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -84,10 +95,7 @@ enum PreviewWindows {
     private static func blend(_ window: NSWindow) {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.backgroundColor = NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                ? NSColor(rgb: 0x1F1E1D) : NSColor(rgb: 0xFAF9F5)
-        }
+        window.backgroundColor = .windowBackgroundColor
     }
 }
 
@@ -101,16 +109,20 @@ enum PreviewWindows {
 enum Shoot {
     static func render(into directory: String, appearance: String, language: String) {
         activeLanguage = language == "zh" ? .chinese : .english
-        let model = AppModel.preview()
         let look = NSAppearance(named: appearance == "light" ? .aqua : .darkAqua)!
-
         let dir = URL(fileURLWithPath: directory)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        write(PanelView(model: model), to: dir, named: "panel-\(appearance)-\(language)",
-              appearance: look)
-        write(SettingsView(model: model), to: dir, named: "settings-\(appearance)-\(language)",
-              appearance: look)
+        for page in [Page.overview, .cpu, .memory, .battery, .processes, .history, .events] {
+            let model = AppModel.preview()
+            model.page = page
+            write(MainWindowView(model: model).frame(width: 940, height: 680),
+                  to: dir, named: "\(page.rawValue)-\(appearance)-\(language)",
+                  appearance: look)
+        }
+        let panelModel = AppModel.preview()
+        write(PanelView(model: panelModel), to: dir,
+              named: "panel-\(appearance)-\(language)", appearance: look)
         print("wrote images to \(dir.path)")
     }
 

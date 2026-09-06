@@ -67,7 +67,13 @@ struct Config: Codable {
         return decoded
     }
 
+    /// Set while rendering previews or screenshots. Laying out a settings form
+    /// can round-trip a Binding, and that must never reach the file that decides
+    /// whether this machine's processes get touched.
+    nonisolated(unsafe) static var isReadOnly = false
+
     func save() throws {
+        guard !Self.isReadOnly else { return }
         try FileManager.default.createDirectory(at: Self.directory,
                                                 withIntermediateDirectories: true)
         let encoder = JSONEncoder()

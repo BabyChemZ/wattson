@@ -187,56 +187,6 @@ struct Donut: View {
     }
 }
 
-/// A filled area chart over time, with horizontal guides. Values are percentages.
-struct AreaChart: View {
-    let values: [Double]
-    var tint: Color = .cpuTint
-    var ceiling: Double = 100
-    var guides: [Double] = [25, 50, 75, 100]
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                ForEach(guides, id: \.self) { guide in
-                    let y = geo.size.height * (1 - min(guide / ceiling, 1))
-                    Path { path in
-                        path.move(to: CGPoint(x: 0, y: y))
-                        path.addLine(to: CGPoint(x: geo.size.width, y: y))
-                    }
-                    .stroke(Color.hairline, lineWidth: 0.5)
-                }
-
-                if values.count > 1 {
-                    let points = positions(in: geo.size)
-                    Path { path in
-                        path.move(to: CGPoint(x: points[0].x, y: geo.size.height))
-                        for p in points { path.addLine(to: p) }
-                        path.addLine(to: CGPoint(x: points[points.count - 1].x,
-                                                 y: geo.size.height))
-                        path.closeSubpath()
-                    }
-                    .fill(LinearGradient(colors: [tint.opacity(0.45), tint.opacity(0.06)],
-                                         startPoint: .top, endPoint: .bottom))
-
-                    Path { path in
-                        path.move(to: points[0])
-                        for p in points.dropFirst() { path.addLine(to: p) }
-                    }
-                    .stroke(tint, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round))
-                }
-            }
-        }
-    }
-
-    private func positions(in size: CGSize) -> [CGPoint] {
-        let step = size.width / CGFloat(max(values.count - 1, 1))
-        return values.enumerated().map { index, value in
-            CGPoint(x: CGFloat(index) * step,
-                    y: size.height * (1 - CGFloat(min(max(value / ceiling, 0), 1))))
-        }
-    }
-}
-
 /// One labelled bar, used for per-core load and memory breakdowns.
 struct LabelledBar: View {
     let label: String
@@ -338,9 +288,13 @@ struct BarChart: View {
     var tint: Color = .cpuTint
     var ceiling: Double = 100
     var guides: [Double] = [25, 50, 75, 100]
-    /// Draw at least this many slots, so early samples appear at their true
-    /// width instead of stretching to fill the card.
-    var minimumSlots: Int = 60
+    /// How many columns to draw regardless of how many samples there are.
+    ///
+    /// Several hundred hairline bars is visual noise, not information: nobody
+    /// reads a single second off a chart. Samples are averaged into this many
+    /// buckets instead, which gives each column room to breathe and makes the
+    /// shape of the last hour legible at a glance.
+    var columns: Int = 48
 
     var body: some View {
         Canvas { context, size in
@@ -349,61 +303,90 @@ struct BarChart: View {
                 var line = Path()
                 line.move(to: CGPoint(x: 0, y: y))
                 line.addLine(to: CGPoint(x: size.width, y: y))
-                context.stroke(line, with: .color(.gray.opacity(0.18)), lineWidth: 0.5)
+                context.stroke(line, with: .color(.gray.opacity(0.14)), lineWidth: 0.5)
             }
 
-            let slots = max(values.count, minimumSlots)
-            let slot = size.width / CGFloat(slots)
-            let barWidth = max(1, slot * 0.72)
+            let buckets = Self.bucket(values, into: columns)
+            guard !buckets.isEmpty else { return }
 
-            for (index, value) in values.enumerated() {
+            let slot = size.width / CGFloat(columns)
+            let barWidth = max(2, slot * 0.55)
+
+            // Opacity tracks height only gently. A chart of a steady value —
+            // memory sits near the same level all day — should read as calm,
+            // not as a wall of saturated colour.
+            for (index, value) in buckets.enumerated() {
                 let ratio = min(max(value / ceiling, 0), 1)
-                let height = max(1, size.height * ratio)
+                let height = max(2, size.height * ratio)
                 let x = CGFloat(index) * slot + (slot - barWidth) / 2
                 let rect = CGRect(x: x, y: size.height - height,
                                   width: barWidth, height: height)
-                // Taller columns read as hotter, which matches how the eye
-                // already scans the chart.
-                let shade = 0.55 + 0.45 * ratio
-                context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 3),
-                             with: .color(tint.opacity(shade)))
+                context.fill(
+                    Path(roundedRect: rect, cornerRadius: min(barWidth / 2, 2)),
+                    with: .color(tint.opacity(0.42 + 0.33 * ratio)))
             }
+        }
+    }
+
+    /// Average the series into `count` buckets, oldest first. Newer samples end
+    /// up on the right, and a short series simply occupies fewer columns rather
+    /// than being stretched across the whole width.
+    static func bucket(_ values: [Double], into count: Int) -> [Double] {
+        guard count > 0, !values.isEmpty else { return [] }
+        guard values.count > count else { return values }
+
+        let size = Double(values.count) / Double(count)
+        return (0..<count).map { index in
+            let start = Int(Double(index) * size)
+            let end = max(start + 1, Int(Double(index + 1) * size))
+            let slice = values[start..<min(end, values.count)]
+            return slice.isEmpty ? 0 : slice.reduce(0, +) / Double(slice.count)
         }
     }
 }
 
-/// One process as a labelled horizontal bar. Ranking is the question these
-/// lists answer, and a bar answers it without reading any numbers.
+/// One process in a ranked list.
+///
+/// The bar is the row's background rather than a separate strip beneath it.
+/// A label, a number and a rule stacked in three bands reads as clutter once
+/// there are six of them; filling the row itself gives the same comparison in
+/// one band, and keeps the type on a single baseline down the list.
 struct ProcessBar: View {
     let name: String
     let value: Double
     let caption: String
-    /// The largest value in the list, so bars are comparable to each other.
+    /// The largest value in the list, so rows are comparable to each other.
     let peak: Double
     var tint: Color = .cpuTint
 
+    private var fraction: Double {
+        min(max(value / max(peak, 0.0001), 0), 1)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
-                Text(name)
-                    .font(.ui(11.5))
-                    .foregroundStyle(Color.ink)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 6)
-                Text(caption)
-                    .font(.figure(11, .medium))
-                    .foregroundStyle(Color.inkMuted)
-            }
+        HStack(spacing: 10) {
+            Text(name)
+                .font(.ui(11.5))
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            Text(caption)
+                .font(.figure(11, .medium))
+                .foregroundStyle(Color.inkMuted)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5.5)
+        .background(
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.hairline)
-                    Capsule().fill(tint)
-                        .frame(width: max(2, geo.size.width
-                                          * min(max(value / max(peak, 0.001), 0), 1)))
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.inkFaint.opacity(0.05))
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(tint.opacity(0.15))
+                        .frame(width: max(5, geo.size.width * fraction))
                 }
             }
-            .frame(height: 5)
-        }
+        )
     }
 }

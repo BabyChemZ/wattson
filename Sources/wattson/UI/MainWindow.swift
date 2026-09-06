@@ -117,18 +117,14 @@ struct MainWindowView: View {
     private var sidebarFooter: some View {
         VStack(alignment: .leading, spacing: 7) {
             Hairline()
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     StatusDot(alarmed: model.state.anomalyCount > 0,
                               working: model.state.isSampling)
-                    Text(L("Modelled", "已建模"))
+                    Text(L("\(model.state.learnedPrograms) programs modelled",
+                           "已掌握 \(model.state.learnedPrograms) 个程序"))
                         .font(.ui(10)).foregroundStyle(Color.inkMuted)
-                    Spacer()
-                    Text("\(model.state.learnedPrograms)/"
-                         + "\(model.state.learnedPrograms + model.state.learningPrograms)")
-                        .font(.figure(10, .medium)).foregroundStyle(Color.inkMuted)
                 }
-                ProgressBar(fraction: model.state.modelledFraction, height: 4)
                 NextSampleCountdown(nextTickAt: model.state.nextTickAt,
                                     isSampling: model.state.isSampling,
                                     isWarmingUp: model.state.isWarmingUp)

@@ -86,12 +86,10 @@ struct PanelView: View {
             }
             Vital(label: L("Modelled", "已建模"),
                   value: "\(model.state.learnedPrograms)") {
-                VStack(alignment: .leading, spacing: 3) {
-                    ProgressBar(fraction: model.state.modelledFraction, height: 3)
-                    Text(model.learningTail)
-                        .font(.ui(9))
-                        .foregroundStyle(Color.inkFaint)
-                }
+                Text(model.learningTail)
+                    .font(.ui(9.5))
+                    .foregroundStyle(Color.inkFaint)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 16)
@@ -214,7 +212,7 @@ struct ProcessRowView: View {
     var body: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(row.command)
+                Text(row.displayName)
                     .font(.ui(12, isAnomalous ? .medium : .regular))
                     .foregroundStyle(isAnomalous ? Color.accent
                                      : isProtected ? Color.inkMuted : Color.ink)

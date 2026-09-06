@@ -14,12 +14,11 @@ struct AwayPage: View {
             if model.awaySessions.isEmpty {
                 Card {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(L("No sessions recorded yet", "还没有记录"))
+                        Text(L("No sessions yet", "暂无记录"))
                             .font(.ui(12.5, .medium)).foregroundStyle(Color.ink)
-                        Text(L("A session starts when the keyboard has been quiet for ten minutes and ends when you come back. Leave the Mac running and check here afterwards.",
-                               "键盘安静满十分钟就开始记录，你回来时结束。让 Mac 挂着跑，回来后到这里看。"))
+                        Text(L("Recording starts after ten minutes without input.",
+                               "无操作满十分钟后开始记录。"))
                             .font(.ui(11)).foregroundStyle(Color.inkMuted)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             } else {
@@ -76,10 +75,6 @@ struct AwaySessionCard: View {
                                            peak: session.energyRanking.first?.share ?? 1,
                                            tint: .alertTint)
                             }
-                            Text(L("Energy Impact added up over the whole session — who actually drained it, not who happens to be costly right now.",
-                                   "整段时间的能耗累计 —— 是谁真的把电用掉了，而不是此刻谁看起来贵。"))
-                                .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }

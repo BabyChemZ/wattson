@@ -38,7 +38,12 @@ struct MenuBarLabel: View {
             Image(systemName: model.state.anomalyCount > 0 ? "flame.fill" : "flame")
             ForEach(model.config.menuBarMetrics) { metric in
                 if let text = value(for: metric) {
-                    Text(text).font(.system(size: 11).monospacedDigit())
+                    // Two readings side by side are ambiguous without a tag;
+                    // one is obvious with or without.
+                    let showTag = model.config.menuBarLabels
+                        && model.config.menuBarMetrics.count > 1
+                    Text(showTag ? "\(metric.shortTitle) \(text)" : text)
+                        .font(.system(size: 11).monospacedDigit())
                 }
             }
         }
@@ -57,7 +62,7 @@ struct MenuBarLabel: View {
             return vitals.battery.map { String(format: "%.0f°", $0.temperature) }
         case .energy:
             // The name alone, truncated — the number means little out of context.
-            return model.topByEnergy(1).first.map { String($0.command.prefix(8)) }
+            return model.topByEnergy(1).first.map { String($0.displayName.prefix(8)) }
         }
     }
 }

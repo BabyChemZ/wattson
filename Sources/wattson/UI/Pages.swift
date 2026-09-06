@@ -7,10 +7,6 @@ struct OverviewPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if model.state.learningPrograms > 0 {
-                LearningCard(model: model)
-            }
-
             HStack(spacing: 12) {
                 StatTile(label: L("CPU", "CPU"),
                          value: String(format: "%.0f%%", model.state.vitals.cpuBusy),
@@ -62,7 +58,7 @@ struct OverviewPage: View {
                     let rows = model.topRows(6)
                     let peak = rows.first?.cpuPercent ?? 1
                     ForEach(rows) { row in
-                        ProcessBar(name: row.command, value: row.cpuPercent,
+                        ProcessBar(name: row.displayName, value: row.cpuPercent,
                                    caption: String(format: "%.0f%%", row.cpuPercent),
                                    peak: peak)
                     }
@@ -152,11 +148,7 @@ struct CPUPage: View {
             }
 
             if let frequency = model.state.vitals.frequency {
-                Card(title: L("Clock speed", "运行频率"),
-                     trailing: AnyView(
-                        Text(L("while executing — idle time excluded",
-                               "执行时的频率 —— 已排除空闲时间"))
-                            .font(.ui(9.5)).foregroundStyle(Color.inkFaint))) {
+                Card(title: L("Clock speed", "运行频率")) {
                     HStack(spacing: 26) {
                         FrequencyReadout(
                             label: L("Efficiency cores", "能效核心"),
@@ -189,10 +181,6 @@ struct CPUPage: View {
                                       "\(model.state.performanceLevelName) 核心"),
                                     model.performanceCores, .cpuTint)
                     }
-                    Text(L("Wattson's first intervention confines a process to the efficiency cores.",
-                           "Wattson 的第一手处置就是把进程限制到能效核心。"))
-                        .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
-                        .padding(.top, 2)
                 }
             }
         }
@@ -292,9 +280,12 @@ struct MemoryPage: View {
             Card {
                 HStack(spacing: 20) {
                     Donut(segments: [
-                        .init(value: Double(vitals.memWiredBytes), color: .systemTint),
-                        .init(value: Double(vitals.memCompressedBytes), color: .swapTint),
-                        .init(value: Double(appMemory), color: .memoryTint),
+                        .init(value: Double(vitals.memWiredBytes),
+                              color: .systemTint.opacity(0.75)),
+                        .init(value: Double(vitals.memCompressedBytes),
+                              color: .swapTint.opacity(0.75)),
+                        .init(value: Double(appMemory),
+                              color: .memoryTint.opacity(0.8)),
                         .init(value: Double(vitals.memUnusedBytes), color: .idleTint),
                     ], centerText: String(format: "%.0f%%", vitals.memUsedFraction * 100),
                        centerCaption: L("used", "已用"))
@@ -341,7 +332,7 @@ struct MemoryPage: View {
                 let rows = model.topByMemory(8)
                 let peak = Double(rows.first?.memBytes ?? 1)
                 ForEach(rows) { row in
-                    ProcessBar(name: row.command, value: Double(row.memBytes),
+                    ProcessBar(name: row.displayName, value: Double(row.memBytes),
                                caption: formatBytes(row.memBytes), peak: peak,
                                tint: .memoryTint)
                 }
@@ -387,31 +378,19 @@ struct BatteryPage: View {
                              fraction: battery.healthPercent / 100)
                 }
 
-                Card(title: L("Draining the battery fastest", "最耗电的进程"),
-                     trailing: AnyView(
-                        Text(L("Energy Impact · right-click a row in Processes to act",
-                               "能耗影响 · 在「进程」页右键可操作"))
-                            .font(.ui(9.5)).foregroundStyle(Color.inkFaint))) {
+                Card(title: L("Draining the battery fastest", "最耗电的进程")) {
                     let rows = model.topByEnergy(6)
                     if rows.isEmpty {
-                        Text(L("Waiting for the first process sample…",
-                               "等待首次进程采样…"))
+                        Text(L("No data yet", "暂无数据"))
                             .font(.ui(11)).foregroundStyle(Color.inkFaint)
                     } else {
                         let peak = rows.first?.energyImpact ?? 1
                         ForEach(rows) { row in
-                            ProcessBar(name: row.command, value: row.energyImpact,
+                            ProcessBar(name: row.displayName, value: row.energyImpact,
                                        caption: String(format: "%.0f", row.energyImpact),
                                        peak: peak, tint: .alertTint)
                         }
                     }
-                }
-
-                Card(title: L("Why temperature matters", "温度为什么重要")) {
-                    Text(L("Lithium packs age fastest when held hot. A process stuck at full CPU while you are away keeps the pack warm for hours — which is the damage this app exists to prevent.",
-                           "锂电池在持续高温下老化最快。一个在你不在时卡满 CPU 的进程会让电池连续数小时处于高温——这正是这个软件要避免的损耗。"))
-                        .font(.ui(11)).foregroundStyle(Color.inkMuted)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if model.state.temperatureTrail.count > 1 {
@@ -478,75 +457,22 @@ struct NetworkPage: View {
             Card(title: L("Busiest connections", "网络占用最高")) {
                 let rows = model.topByNetwork(6)
                 if rows.isEmpty {
-                    Text(L("No process is moving a meaningful amount of data.",
-                           "当前没有进程在传输可观的数据。"))
+                    Text(L("No significant traffic", "当前无明显流量"))
                         .font(.ui(11)).foregroundStyle(Color.inkFaint)
                 } else {
                     let peak = rows.first?.netBytesPerSecond ?? 1
                     ForEach(rows) { row in
-                        ProcessBar(name: row.command, value: row.netBytesPerSecond,
+                        ProcessBar(name: row.displayName, value: row.netBytesPerSecond,
                                    caption: formatRate(row.netBytesPerSecond),
                                    peak: peak, tint: .cpuTint)
                     }
                 }
             }
 
-            Card(title: L("Network-shaped programs", "网络型程序")) {
-                Text(L("A program whose job is throughput is judged on throughput: when it pegs the CPU while its byte counters stop moving, that is the clearest evidence of a wedge.",
-                       "以吞吐为职责的程序，就按吞吐来判断：当它占满 CPU 而字节计数不再增长时，这是卡死最明确的证据。"))
-                    .font(.ui(11)).foregroundStyle(Color.inkMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
     }
 }
-
-/// Shown while programs still lack enough history to be judged. It answers the
-/// two questions someone has after installing: is it doing anything, and when
-/// will it be ready.
-struct LearningCard: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(L("Building behavioural baselines", "正在建立行为基线"))
-                        .font(.ui(12.5, .semibold)).foregroundStyle(Color.ink)
-                    Spacer()
-                    Text(String(format: "%.0f%%", model.state.modelledFraction * 100))
-                        .font(.figure(12.5, .medium)).foregroundStyle(Color.accent)
-                }
-
-                ProgressBar(fraction: model.state.modelledFraction, height: 7)
-
-                HStack(spacing: 5) {
-                    Text(L("\(model.state.learnedPrograms) modelled",
-                           "\(model.state.learnedPrograms) 个已建模"))
-                    Text("·")
-                    Text(L("\(model.state.learningPrograms) still learning",
-                           "\(model.state.learningPrograms) 个学习中"))
-                    if let minutes = model.state.estimatedMinutesToModel {
-                        Text("·")
-                        Text(L("about \(minutes) min to go", "约还需 \(minutes) 分钟"))
-                    }
-                    Spacer()
-                    NextSampleCountdown(nextTickAt: model.state.nextTickAt,
-                                        isSampling: model.state.isSampling,
-                                        isWarmingUp: model.state.isWarmingUp)
-                }
-                .font(.ui(10.5))
-                .foregroundStyle(Color.inkMuted)
-
-                Text(L("Until a program has a baseline it is watched but never acted on.",
-                       "在建立基线之前，程序只被观察，绝不会被处置。"))
-                    .font(.ui(10)).foregroundStyle(Color.inkFaint)
-            }
-        }
-    }
-}
-
-/// One cluster's clock, with how much of the interval it was awake for.
+/// One cluster's clock, with how much of the interval it was awake.
 struct FrequencyReadout: View {
     let label: String
     let mhz: Double?
@@ -559,8 +485,7 @@ struct FrequencyReadout: View {
             Text(mhz.map { String(format: "%.0f MHz", $0) } ?? "—")
                 .font(.figure(17, .medium)).foregroundStyle(tint)
             if let active {
-                Text(String(format: L("awake %.0f%% of the time", "唤醒时间占 %.0f%%"),
-                            active * 100))
+                Text(String(format: L("%.0f%% awake", "唤醒 %.0f%%"), active * 100))
                     .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
             }
         }
@@ -602,10 +527,8 @@ struct SensorsPage: View {
             Card(title: L("By cluster", "分组")) {
                 DetailGrid(rows: model.sensorGroupRows())
                 if sensors.fanRPM.isEmpty {
-                    Text(L("This machine has no fans — it sheds heat passively, which makes a long hot stretch matter more, not less.",
-                           "这台机器没有风扇，靠被动散热 —— 这让长时间高温更值得在意，而不是更不值得。"))
+                    Text(L("Fanless — passive cooling", "无风扇 · 被动散热"))
                         .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
-                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(Array(sensors.fanRPM.enumerated()), id: \.offset) { index, rpm in
                         LabelledBar(label: L("Fan \(index + 1)", "风扇 \(index + 1)"),
@@ -630,7 +553,7 @@ struct SensorsPage: View {
                     ($0.key, String(format: "%.1f °C", $0.value))
                 })
                 if sensors.all.isEmpty {
-                    Text(L("Reading sensors…", "正在读取传感器…"))
+                    Text(L("No sensor data", "暂无传感器数据"))
                         .font(.ui(11)).foregroundStyle(Color.inkFaint)
                 }
             }
@@ -734,7 +657,7 @@ struct CompactProcessRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(row.command).font(.ui(11.5)).foregroundStyle(Color.ink)
+            Text(row.displayName).font(.ui(11.5)).foregroundStyle(Color.ink)
                 .lineLimit(1).truncationMode(.middle)
             Spacer()
             Sparkline(values: row.recentCPU, tint: .inkFaint)

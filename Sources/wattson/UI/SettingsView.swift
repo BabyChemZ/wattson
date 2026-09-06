@@ -13,8 +13,7 @@ struct SettingsView: View {
                     Text(L("Settings", "设置"))
                         .font(.display(24))
                         .foregroundStyle(Color.ink)
-                    Text(L("Wattson learns each program's habits, then tells you when one breaks them.",
-                           "Wattson 会学习每个程序的习惯，当某个程序反常时告诉你。"))
+                    Text(L("Behavioural monitoring for macOS.", "macOS 行为监控。"))
                         .font(.ui(11.5))
                         .foregroundStyle(Color.inkMuted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -46,10 +45,9 @@ struct SettingsView: View {
                     Text(L("Act on it", "自动处置"))
                         .font(.ui(12.5, .medium)).foregroundStyle(Color.ink)
                     Text(model.config.dryRun
-                         ? L("Currently only reporting what it would have done.",
-                             "当前只报告它本会做什么，不做任何改动。")
-                         : L("Moves the process to efficiency cores, then restarts it if that doesn't settle it.",
-                             "先把进程移到能效核；若仍未平息，再重启它。"))
+                         ? L("Reports only. Nothing is changed.", "仅报告，不做改动。")
+                         : L("Efficiency cores first, restart if that doesn't settle it.",
+                             "先移到能效核，未平息则重启。"))
                         .font(.ui(11))
                         .foregroundStyle(Color.inkMuted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -58,8 +56,8 @@ struct SettingsView: View {
             .toggleStyle(.switch)
             .tint(Color.accent)
 
-            Text(L("System processes and anything you rely on to reach this Mac remotely — SSH, Tailscale, VNC, ToDesk, WARP — are never touched.",
-                   "系统进程，以及你用来远程连回这台 Mac 的一切 —— SSH、Tailscale、VNC、ToDesk、WARP —— 永不处置。"))
+            Text(L("Never applies to system processes or remote access — SSH, Tailscale, VNC, ToDesk, WARP.",
+                   "不适用于系统进程和远程连接：SSH、Tailscale、VNC、ToDesk、WARP。"))
                 .font(.ui(10.5))
                 .foregroundStyle(Color.inkFaint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -128,8 +126,8 @@ struct SettingsView: View {
                 AccentButton(title: L("Start at login", "登录时启动")) { Install.install() }
                 PlainButton(title: L("Remove", "移除")) { Install.uninstall() }
             }
-            Text(L("Runs in the background as a launchd agent. No root, no kernel extension.",
-                   "以 launchd 后台代理方式运行。不需要 root，不需要内核扩展。"))
+            Text(L("Background launchd agent. No root required.",
+                   "后台 launchd 代理，无需 root。"))
                 .font(.ui(10.5))
                 .foregroundStyle(Color.inkFaint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -143,6 +141,12 @@ extension SettingsView {
         Card(title: L("Menu bar", "菜单栏")) {
             Text(L("Readings shown next to the icon.", "显示在图标旁边的实时读数。"))
                 .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
+            Toggle(isOn: $model.config.menuBarLabels) {
+                Text(L("Label each reading", "每项带标签"))
+                    .font(.ui(12)).foregroundStyle(Color.ink)
+            }
+            .toggleStyle(.switch)
+            .tint(Color.accent)
             ForEach(MenuBarMetric.allCases) { metric in
                 Toggle(isOn: Binding(
                     get: { model.config.menuBarMetrics.contains(metric) },
@@ -167,10 +171,9 @@ extension SettingsView {
     /// just want to be told when a number crosses a line.
     var alerts: some View {
         Card(title: L("Threshold alerts", "阈值告警")) {
-            Text(L("Independent of the behavioural detector — these fire on the number alone.",
-                   "与行为检测相互独立 —— 这些只看数值本身。"))
+            Text(L("Fires on the value alone, regardless of baselines.",
+                   "只看数值，与基线无关。"))
                 .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
-                .fixedSize(horizontal: false, vertical: true)
             ThresholdRow(label: L("Memory above", "内存高于"),
                          suffix: "%", range: 50...99, step: 1,
                          value: $model.config.alertMemoryPercent)

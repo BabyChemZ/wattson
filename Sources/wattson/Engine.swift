@@ -397,6 +397,8 @@ final class Engine: @unchecked Sendable {
 
             if let reason = Lifelines.isProtected(delta.command) {
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
+                                       displayName: ProcessNaming.displayName(
+                                        pid: delta.pid, fallback: delta.command),
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
                                        usualCPUPercent: nil,
                                        energyImpact: delta.energyImpact,
@@ -407,6 +409,8 @@ final class Engine: @unchecked Sendable {
             }
             if config.neverTouch.contains(delta.command) {
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
+                                       displayName: ProcessNaming.displayName(
+                                        pid: delta.pid, fallback: delta.command),
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
                                        usualCPUPercent: nil,
                                        energyImpact: delta.energyImpact,
@@ -428,6 +432,8 @@ final class Engine: @unchecked Sendable {
             case .anomalous:
                 handleAnomaly(verdict, delta: delta)
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
+                                       displayName: ProcessNaming.displayName(
+                                        pid: delta.pid, fallback: delta.command),
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
                                        usualCPUPercent: usual,
                                        energyImpact: delta.energyImpact,
@@ -439,6 +445,8 @@ final class Engine: @unchecked Sendable {
                 resolveIfNeeded(pid: delta.pid, command: delta.command)
                 store.observe(delta)
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
+                                       displayName: ProcessNaming.displayName(
+                                        pid: delta.pid, fallback: delta.command),
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
                                        usualCPUPercent: usual,
                                        energyImpact: delta.energyImpact,
@@ -451,6 +459,8 @@ final class Engine: @unchecked Sendable {
                 resolveIfNeeded(pid: delta.pid, command: delta.command)
                 store.observe(delta)
                 rows.append(ProcessRow(pid: delta.pid, command: delta.command,
+                                       displayName: ProcessNaming.displayName(
+                                        pid: delta.pid, fallback: delta.command),
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
                                        usualCPUPercent: usual,
                                        energyImpact: delta.energyImpact,

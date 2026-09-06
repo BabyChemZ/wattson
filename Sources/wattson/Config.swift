@@ -44,6 +44,8 @@ struct Config: Codable {
 
     /// Which live readings to show in the menu bar itself.
     var menuBarMetrics: [MenuBarMetric] = [.cpu, .memory]
+    /// Prefix each reading with a one-letter tag, so several are tellable apart.
+    var menuBarLabels = true
     /// Warn when these are exceeded. Nil disables the alert.
     var alertCPUPercent: Double? = nil
     var alertMemoryPercent: Double? = 92

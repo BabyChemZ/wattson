@@ -62,7 +62,7 @@ final class AppModel: ObservableObject {
     var learningTail: String {
         state.learningPrograms > 0
             ? L("+\(state.learningPrograms) learning", "+\(state.learningPrograms) 学习中")
-            : L("all known", "均已建立")
+            : L("all running programs", "运行中的都已建立")
     }
 
     var loadText: String {
@@ -192,6 +192,26 @@ final class AppModel: ObservableObject {
     var knownPrograms: [String] { engine.knownProgramNames() }
 
     var allRows: [ProcessRow] { state.rows }
+
+    private var previewSessions: [AwaySession]?
+    var awaySessions: [AwaySession] { previewSessions ?? engine.awaySessions() }
+
+    /// The process table in the user's chosen order. Anomalies are not forced
+    /// to the top here: when someone sorts by memory they mean by memory.
+    func sortedRows(by sort: ProcessSort, ascending: Bool) -> [ProcessRow] {
+        state.rows.sorted { a, b in
+            ascending ? sort.compare(a, b) : sort.compare(b, a)
+        }
+    }
+
+    /// Hand off to Activity Monitor, which can do things this app deliberately
+    /// does not — force quit, sample, inspect open files.
+    func openActivityMonitor() {
+        let url = URL(fileURLWithPath:
+            "/System/Applications/Utilities/Activity Monitor.app")
+        NSWorkspace.shared.openApplication(at: url,
+                                           configuration: NSWorkspace.OpenConfiguration())
+    }
 
     func topRows(_ count: Int) -> [ProcessRow] {
         Array(state.rows.sorted { $0.cpuPercent > $1.cpuPercent }.prefix(count))
@@ -509,6 +529,40 @@ final class AppModel: ObservableObject {
         state.tickCount = 96
         state.lastTick = Date()
         state.observeOnly = false
+        var session = AwaySession(
+            startedAt: Date().addingTimeInterval(-8 * 3600 - 720))
+        session.endedAt = Date().addingTimeInterval(-180)
+        session.peakTemperature = 41.2
+        session.peakTemperatureAt = Date().addingTimeInterval(-5 * 3600)
+        session.minutesWarm = 187
+        session.minutesThrottled = 12
+        session.peakCPU = 402
+        session.startCharge = 96
+        session.endCharge = 62
+        session.wasOnBattery = true
+        session.energyByProgram = ["verge-mihomo": 62000, "Codex (Service)": 18000,
+                                   "WindowServer": 9000, "Google Chrome Helper": 6000,
+                                   "python3.11": 3000, "Obsidian": 2000]
+        session.incidents = [
+            AwayIncident(at: Date().addingTimeInterval(-7 * 3600),
+                         command: "verge-mihomo",
+                         summary: L("CPU 402% — matches none of its usual states (2% / 45%)",
+                                    "CPU 402% —— 不属于它已知的任何状态（2% / 45%）"),
+                         action: L("moved to efficiency cores", "已移到能效核")),
+            AwayIncident(at: Date().addingTimeInterval(-6 * 3600 - 1500),
+                         command: "verge-mihomo",
+                         summary: L("still pegged after 5 min on efficiency cores",
+                                    "降核 5 分钟后仍未平息"),
+                         action: L("restarted", "已重启")),
+        ]
+        var older = AwaySession(startedAt: Date().addingTimeInterval(-32 * 3600))
+        older.endedAt = Date().addingTimeInterval(-25 * 3600)
+        older.peakTemperature = 33.1
+        older.minutesWarm = 0
+        older.startCharge = 100
+        older.endCharge = 98
+        model.previewSessions = [session, older]
+
         model.state = state
         return model
     }

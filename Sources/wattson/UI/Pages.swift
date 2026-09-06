@@ -52,7 +52,13 @@ struct OverviewPage: View {
             }
 
             HStack(alignment: .top, spacing: 12) {
-                Card(title: L("Busiest now", "当前占用最高")) {
+                Card(title: L("Busiest now", "当前占用最高"),
+                     trailing: AnyView(
+                        Button(L("Activity Monitor", "活动监视器")) {
+                            model.openActivityMonitor()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.ui(10)).foregroundStyle(Color.accent))) {
                     let rows = model.topRows(6)
                     let peak = rows.first?.cpuPercent ?? 1
                     ForEach(rows) { row in
@@ -143,6 +149,30 @@ struct CPUPage: View {
                     .frame(height: 130)
                 Text(model.trailSpanText)
                     .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
+            }
+
+            if let frequency = model.state.vitals.frequency {
+                Card(title: L("Clock speed", "运行频率"),
+                     trailing: AnyView(
+                        Text(L("while executing — idle time excluded",
+                               "执行时的频率 —— 已排除空闲时间"))
+                            .font(.ui(9.5)).foregroundStyle(Color.inkFaint))) {
+                    HStack(spacing: 26) {
+                        FrequencyReadout(
+                            label: L("Efficiency cores", "能效核心"),
+                            mhz: frequency.efficiencyMHz,
+                            active: frequency.efficiencyActive, tint: .coreTint)
+                        FrequencyReadout(
+                            label: L("\(model.state.performanceLevelName) cores",
+                                     "\(model.state.performanceLevelName) 核心"),
+                            mhz: frequency.performanceMHz,
+                            active: frequency.performanceActive, tint: .cpuTint)
+                        FrequencyReadout(label: L("All cores", "全部核心"),
+                                         mhz: frequency.averageMHz,
+                                         active: nil, tint: .inkMuted)
+                        Spacer()
+                    }
+                }
             }
 
             Card(title: L("Load average", "平均负载")) {
@@ -511,6 +541,27 @@ struct LearningCard: View {
                 Text(L("Until a program has a baseline it is watched but never acted on.",
                        "在建立基线之前，程序只被观察，绝不会被处置。"))
                     .font(.ui(10)).foregroundStyle(Color.inkFaint)
+            }
+        }
+    }
+}
+
+/// One cluster's clock, with how much of the interval it was awake for.
+struct FrequencyReadout: View {
+    let label: String
+    let mhz: Double?
+    let active: Double?
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).font(.ui(10.5)).foregroundStyle(Color.inkMuted)
+            Text(mhz.map { String(format: "%.0f MHz", $0) } ?? "—")
+                .font(.figure(17, .medium)).foregroundStyle(tint)
+            if let active {
+                Text(String(format: L("awake %.0f%% of the time", "唤醒时间占 %.0f%%"),
+                            active * 100))
+                    .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
             }
         }
     }

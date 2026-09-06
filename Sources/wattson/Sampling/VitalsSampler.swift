@@ -20,6 +20,7 @@ final class VitalsSampler {
     private var cachedGPU: GPUInfo?
     private var cachedSensors = SensorReadings()
     private let smc = SMC()
+    private let frequency = FrequencyMonitor()
 
     private var previousNetwork: (inBytes: UInt64, outBytes: UInt64)?
     private var previousNetworkAt: Date?
@@ -44,6 +45,7 @@ final class VitalsSampler {
         _ = cores.sample()
         _ = SystemProbe.networkCounters()
         _ = SystemProbe.diskCounters()
+        _ = frequency?.sample()
     }
 
     func sample() -> (vitals: SystemVitals, cores: [CoreLoad]) {
@@ -73,6 +75,7 @@ final class VitalsSampler {
         vitals.gpu = cachedGPU
         vitals.sensors = cachedSensors
         vitals.memoryPressure = SystemProbe.memoryPressure()
+        vitals.frequency = frequency?.sample()
         vitals.thermal = SystemProbe.thermalState()
         vitals.uptimeSeconds = SystemProbe.uptime()
         vitals.disk = SystemProbe.disk()

@@ -3,7 +3,7 @@ import SwiftUI
 /// The pages in the sidebar, in order.
 enum Page: String, CaseIterable, Identifiable {
     case overview, cpu, gpu, memory, sensors, battery, disk, network,
-         processes, history, events, settings
+         processes, history, away, events, settings
     var id: String { rawValue }
 
     var title: String {
@@ -18,6 +18,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .network:   return L("Network", "网络")
         case .processes: return L("Processes", "进程")
         case .history:   return L("History", "历史基线")
+        case .away:      return L("While away", "离开报告")
         case .events:    return L("Events", "事件")
         case .settings:  return L("Settings", "设置")
         }
@@ -35,6 +36,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .network:   return "network"
         case .processes: return "list.bullet"
         case .history:   return "chart.bar.xaxis"
+        case .away:      return "moon.zzz"
         case .events:    return "bell"
         case .settings:  return "gearshape"
         }
@@ -44,7 +46,7 @@ enum Page: String, CaseIterable, Identifiable {
     /// doing, then what is Wattson making of it.
     static let hardware: [Page] = [.overview, .cpu, .gpu, .memory, .sensors,
                                    .battery, .disk, .network]
-    static let watchdog: [Page] = [.processes, .history, .events, .settings]
+    static let watchdog: [Page] = [.processes, .history, .away, .events, .settings]
 }
 
 /// Native sidebar material. SwiftUI has no direct equivalent that also works in
@@ -181,6 +183,7 @@ struct MainWindowView: View {
         case .network:   NetworkPage(model: model)
         case .processes: ProcessesPage(model: model)
         case .history:   HistoryPage(model: model)
+        case .away:      AwayPage(model: model)
         case .events:    EventsPage(model: model)
         case .settings:  SettingsView(model: model)
         }

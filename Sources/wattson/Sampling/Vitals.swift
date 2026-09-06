@@ -23,6 +23,7 @@ struct SystemVitals: Equatable {
     var thermal: ThermalState = .nominal
     var sensors = SensorReadings()
     var uptimeSeconds: TimeInterval = 0
+    var frequency: FrequencyMonitor.Reading?
     var disk = DiskInfo()
     var network = NetworkThroughput()
 

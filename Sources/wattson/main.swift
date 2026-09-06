@@ -112,6 +112,31 @@ case "testmodes":
     }
     exit(0)
 
+case "freq":
+    guard let monitor = FrequencyMonitor() else {
+        print("IOReport unavailable"); exit(1)
+    }
+    for line in monitor.describeChannels() { print(line) }
+    let steps = monitor.loadedSteps
+    print("\nE table (\(steps.efficiency.count)): "
+        + steps.efficiency.map { String(format: "%.0f", $0) }.joined(separator: " "))
+    print("P table (\(steps.performance.count)): "
+        + steps.performance.map { String(format: "%.0f", $0) }.joined(separator: " "))
+    print("")
+    _ = monitor.sample()          // first call establishes the baseline
+    for step in 0..<6 {
+        Thread.sleep(forTimeInterval: 1)
+        if let r = monitor.sample() {
+            print(String(format: "%d  E-core %@  P-core %@  mean %@", step,
+                         r.efficiencyMHz.map { String(format: "%.0f MHz", $0) } ?? "-" as NSString,
+                         r.performanceMHz.map { String(format: "%.0f MHz", $0) } ?? "-" as NSString,
+                         r.averageMHz.map { String(format: "%.0f MHz", $0) } ?? "-" as NSString))
+        } else {
+            print("\(step)  no reading")
+        }
+    }
+    exit(0)
+
 case "sensors":
     guard let smc = SMC() else { print("SMC unavailable"); exit(1) }
     let temps = smc.temperatures()

@@ -84,8 +84,12 @@ struct EngineState: Equatable {
     var powerTrail: [Double] = []
     var rows: [ProcessRow] = []
     var events: [Event] = []
+    /// Programs running right now that have a usable baseline.
     var learnedPrograms = 0
+    /// Programs running right now that do not yet.
     var learningPrograms = 0
+    /// Everything ever recorded, including programs not currently running.
+    var knownProgramCount = 0
     var lastTick: Date?
     /// When the next sample is due, so the UI can show a live countdown rather
     /// than a status word that never appears to change.
@@ -107,5 +111,35 @@ struct EngineState: Equatable {
 
     var anomalyCount: Int {
         rows.filter { if case .anomalous = $0.status { return true } else { return false } }.count
+    }
+}
+
+
+/// Columns the process table can be ordered by.
+enum ProcessSort: String, CaseIterable {
+    case name, cpu, usual, memory, energy
+
+    var title: String {
+        switch self {
+        case .name:   return L("PROGRAM", "程序")
+        case .cpu:    return L("NOW", "当前")
+        case .usual:  return L("USUAL", "常态")
+        case .memory: return L("MEMORY", "内存")
+        case .energy: return L("ENERGY", "能耗")
+        }
+    }
+
+    /// Numeric columns start high-to-low, names start A-Z — the order each is
+    /// usually wanted in first.
+    var defaultsAscending: Bool { self == .name }
+
+    func compare(_ a: ProcessRow, _ b: ProcessRow) -> Bool {
+        switch self {
+        case .name:   return a.command.localizedCaseInsensitiveCompare(b.command) == .orderedAscending
+        case .cpu:    return a.cpuPercent < b.cpuPercent
+        case .usual:  return (a.usualCPUPercent ?? -1) < (b.usualCPUPercent ?? -1)
+        case .memory: return a.memBytes < b.memBytes
+        case .energy: return a.energyImpact < b.energyImpact
+        }
     }
 }

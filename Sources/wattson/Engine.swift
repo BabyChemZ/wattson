@@ -59,6 +59,10 @@ final class Engine: @unchecked Sendable {
     private var gpuTrail: [Double] = []
     /// Last time each threshold fired, so a sustained condition notifies once
     /// rather than every second.
+    private let awayLog = AwayLog()
+    private var currentAway: AwaySession?
+    private var lastVitalsAt: Date?
+
     private var lastAlert: [String: Date] = [:]
     private static let alertCooldown: TimeInterval = 1800
     private var restartTimes: [String: [Date]] = [:]
@@ -138,6 +142,7 @@ final class Engine: @unchecked Sendable {
             trim(&gpuTrail)
         }
 
+        trackAwaySession(vitals)
         checkThresholds(vitals)
 
         publish {
@@ -155,6 +160,78 @@ final class Engine: @unchecked Sendable {
             $0.powerTrail = self.powerTrail
             $0.gpuTrail = self.gpuTrail
         }
+    }
+
+    /// Opens a session when the keyboard goes quiet and closes it when someone
+    /// comes back, accumulating what happened in between.
+    private func trackAwaySession(_ vitals: SystemVitals) {
+        let now = Date()
+        let elapsed = lastVitalsAt.map { now.timeIntervalSince($0) } ?? 0
+        lastVitalsAt = now
+
+        let idle = Presence.idleSeconds()
+        let away = idle > 600
+
+        if away, currentAway == nil {
+            // Backdate to when the input actually stopped, not when we noticed.
+            var session = AwaySession(startedAt: now.addingTimeInterval(-idle))
+            session.startCharge = vitals.battery?.chargePercent
+            session.wasOnBattery = vitals.battery.map { !$0.isPluggedIn } ?? false
+            currentAway = session
+        }
+
+        if away, var session = currentAway, elapsed > 0, elapsed < 60 {
+            let temperature = vitals.battery?.temperature ?? 0
+            if temperature > session.peakTemperature {
+                session.peakTemperature = temperature
+                session.peakTemperatureAt = now
+            }
+            if temperature >= 35 { session.minutesWarm += elapsed / 60 }
+            if vitals.thermal == .serious || vitals.thermal == .critical {
+                session.minutesThrottled += elapsed / 60
+            }
+            session.peakCPU = max(session.peakCPU, vitals.cpuBusy)
+            session.endCharge = vitals.battery?.chargePercent
+            currentAway = session
+        }
+
+        if !away, var session = currentAway {
+            session.endedAt = now
+            session.endCharge = vitals.battery?.chargePercent
+            currentAway = nil
+            if session.duration > 300 {
+                awayLog.record(session)
+                announce(session)
+            }
+        }
+    }
+
+    /// Tell the user what they missed, but only when there is something worth
+    /// interrupting them for.
+    private func announce(_ session: AwaySession) {
+        guard session.isNoteworthy else { return }
+        var lines: [String] = []
+        let minutes = Int(session.duration / 60)
+        lines.append(L("Away \(formatMinutes(minutes))", "离开 \(formatMinutes(minutes))"))
+        if session.peakTemperature > 0 {
+            lines.append(String(format: L("peak battery %.0f°C", "电池峰值 %.0f°C"),
+                                session.peakTemperature))
+        }
+        if session.minutesWarm > 10 {
+            lines.append(String(format: L("%.0f min above 35°C", "高于 35°C 共 %.0f 分钟"),
+                                session.minutesWarm))
+        }
+        if let worst = session.energyRanking.first {
+            lines.append(String(format: L("%@ used %.0f%% of the energy",
+                                          "%@ 占了 %.0f%% 的能耗"),
+                                worst.command as NSString, worst.share * 100))
+        }
+        if !session.incidents.isEmpty {
+            lines.append(L("\(session.incidents.count) flagged",
+                           "\(session.incidents.count) 次异常"))
+        }
+        notifier.send(title: L("While you were away", "你不在的时候"),
+                      body: lines.joined(separator: " · "))
     }
 
     /// Plain numeric alerts, deliberately separate from the behavioural
@@ -383,20 +460,36 @@ final class Engine: @unchecked Sendable {
             }
         }
 
+        if currentAway != nil {
+            accumulateAwayEnergy(deltas)
+        }
+
         forgetDeadProcesses(stillAlive: liveNow)
 
         ticksSinceSave += 1
         if ticksSinceSave >= 10 { store.save(); ticksSinceSave = 0 }
 
-        let trained = store.baselines.values.filter {
-            $0.cpuPercent.count >= config.minimumSamples
+        // Progress counts only the programs running *now*, not every program
+        // ever seen.
+        //
+        // The process table is capped at the top 50 by CPU, so intermittent
+        // helpers drift in and out of view and never accumulate enough samples.
+        // Counting them made the total permanently unreachable — the progress
+        // bar could not arrive at 100% no matter how long it ran, which is
+        // exactly what it looked like overnight. They also do not matter: a
+        // program that never sustains real CPU is never judged anyway.
+        let liveCommands = Set(deltas.lazy
+            .filter { Lifelines.isProtected($0.command) == nil }
+            .map(\.command))
+        let trained = liveCommands.filter {
+            (store.baseline(for: $0)?.cpuPercent.count ?? 0) >= config.minimumSamples
         }.count
+        let stillLearning = max(0, liveCommands.count - trained)
 
-        // How much longer the still-learning programs need, judged by the
-        // median rather than the worst case — a program seen once shouldn't
-        // make the whole estimate look hopeless.
-        let shortfalls = store.baselines.values
-            .map(\.cpuPercent.count)
+        // Time remaining, from the median shortfall among programs actually
+        // running — not the worst case, which one newly-seen process would set.
+        let shortfalls = liveCommands
+            .map { store.baseline(for: $0)?.cpuPercent.count ?? 0 }
             .filter { $0 < config.minimumSamples }
             .map { config.minimumSamples - $0 }
             .sorted()
@@ -418,7 +511,8 @@ final class Engine: @unchecked Sendable {
             $0.rows = sorted
             $0.events = self.recentEvents
             $0.learnedPrograms = trained
-            $0.learningPrograms = max(0, self.store.baselines.count - trained)
+            $0.learningPrograms = stillLearning
+            $0.knownProgramCount = self.store.baselines.count
             $0.estimatedMinutesToModel = estimate
             $0.lastTick = Date()
             $0.observeOnly = self.config.dryRun
@@ -429,6 +523,23 @@ final class Engine: @unchecked Sendable {
     private func publish(_ mutate: (inout EngineState) -> Void) {
         mutate(&state)
         onUpdate?(state)
+    }
+
+    /// Energy Impact integrated over the interval, per program. This is what
+    /// answers "who drained the battery while I was out" — a question the
+    /// instantaneous number cannot.
+    private func accumulateAwayEnergy(_ deltas: [ProcDelta]) {
+        guard var session = currentAway else { return }
+        for delta in deltas where delta.energyImpact > 0 {
+            session.energyByProgram[delta.command, default: 0] +=
+                delta.energyImpact * delta.interval
+        }
+        currentAway = session
+    }
+
+    /// Recent away sessions, newest first.
+    func awaySessions() -> [AwaySession] {
+        queue.sync { awayLog.sessions }
     }
 
     // MARK: - Burst duration
@@ -555,6 +666,13 @@ final class Engine: @unchecked Sendable {
         log.write("[\(incident.stage.rawValue)] \(delta.command) [\(delta.pid)] "
                 + "score \(String(format: "%.2f", verdict.score)) — "
                 + lines.joined(separator: "; ") + " — \(phrase)")
+
+        if var session = currentAway {
+            session.incidents.append(AwayIncident(
+                at: Date(), command: delta.command,
+                summary: lines.first ?? "", action: phrase))
+            currentAway = session
+        }
 
         recentEvents.insert(Event(at: Date(), command: delta.command,
                                   headline: phrase, reasons: lines,

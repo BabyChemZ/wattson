@@ -11,6 +11,10 @@ final class BaselineStore {
 
     /// Forget programs not seen in this long, so the file cannot grow forever.
     private let staleAfter: TimeInterval = 30 * 24 * 3600
+    /// A program seen only a handful of times in a whole day was passing
+    /// through, not living here. Keeping those around inflated every count.
+    private let driftInAfter: TimeInterval = 24 * 3600
+    private let driftInSamples = 5
 
     init() { load() }
 
@@ -36,7 +40,14 @@ final class BaselineStore {
               let decoded = try? JSONDecoder().decode([String: BehaviorBaseline].self,
                                                       from: data) else { return }
         let cutoff = Date().addingTimeInterval(-staleAfter)
-        baselines = decoded.filter { $0.value.lastSeen > cutoff }
+        let driftCutoff = Date().addingTimeInterval(-driftInAfter)
+        baselines = decoded.filter { _, baseline in
+            guard baseline.lastSeen > cutoff else { return false }
+            // Seen a few times, then never again: a passer-by.
+            if baseline.lastSeen < driftCutoff,
+               baseline.cpuPercent.count < driftInSamples { return false }
+            return true
+        }
     }
 
     func save() {

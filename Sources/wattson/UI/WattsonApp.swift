@@ -113,7 +113,7 @@ enum Shoot {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         for page in [Page.overview, .cpu, .gpu, .memory, .sensors, .battery,
-                     .disk, .network, .processes, .history, .events] {
+                     .disk, .network, .processes, .history, .away, .events] {
             let model = AppModel.preview()
             model.page = page
             write(MainWindowView(model: model).frame(width: 940, height: 680),

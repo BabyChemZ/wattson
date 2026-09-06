@@ -5,17 +5,25 @@ import SwiftUI
 struct ProcessesPage: View {
     @ObservedObject var model: AppModel
     @State private var selected: Int32?
+    @State private var sort: ProcessSort = .cpu
+    @State private var ascending = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Card(title: L("All processes", "全部进程"),
-                 trailing: AnyView(
-                    Text(L("click for history · right-click for actions",
-                           "点击看历史 · 右键可操作"))
-                        .font(.ui(10)).foregroundStyle(Color.inkFaint))) {
+                 trailing: AnyView(HStack(spacing: 10) {
+                    Text(L("click a heading to sort · right-click a row for actions",
+                           "点列头排序 · 右键行可操作"))
+                        .font(.ui(10)).foregroundStyle(Color.inkFaint)
+                    Button(L("Activity Monitor", "活动监视器")) {
+                        model.openActivityMonitor()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.ui(10.5)).foregroundStyle(Color.accent)
+                 })) {
                 columnHeader
                 Hairline()
-                ForEach(model.allRows) { row in
+                ForEach(model.sortedRows(by: sort, ascending: ascending)) { row in
                     VStack(spacing: 0) {
                         FullProcessRow(row: row, selected: selected == row.pid,
                                        model: model)
@@ -36,16 +44,47 @@ struct ProcessesPage: View {
 
     private var columnHeader: some View {
         HStack(spacing: 10) {
-            Text(L("PROGRAM", "程序")).frame(maxWidth: .infinity, alignment: .leading)
+            heading(.name, width: nil, alignment: .leading)
             Text(L("TREND", "近况")).frame(width: 52, alignment: .center)
-            Text(L("NOW", "当前")).frame(width: 52, alignment: .trailing)
-            Text(L("USUAL", "常态")).frame(width: 52, alignment: .trailing)
-            Text(L("MEMORY", "内存")).frame(width: 62, alignment: .trailing)
-            Text(L("ENERGY", "能耗")).frame(width: 48, alignment: .trailing)
+                .font(.ui(9.5, .semibold)).tracking(0.5)
+                .foregroundStyle(Color.inkFaint)
+            heading(.cpu, width: 52, alignment: .trailing)
+            heading(.usual, width: 52, alignment: .trailing)
+            heading(.memory, width: 62, alignment: .trailing)
+            heading(.energy, width: 48, alignment: .trailing)
         }
-        .font(.ui(9.5, .semibold))
-        .tracking(0.5)
-        .foregroundStyle(Color.inkFaint)
+    }
+
+    /// A sortable column heading. Clicking the active column reverses it;
+    /// clicking another switches to it in whichever direction that column is
+    /// normally read.
+    private func heading(_ column: ProcessSort, width: CGFloat?,
+                         alignment: Alignment) -> some View {
+        Button {
+            if sort == column {
+                ascending.toggle()
+            } else {
+                sort = column
+                ascending = column.defaultsAscending
+            }
+        } label: {
+            HStack(spacing: 3) {
+                if alignment == .trailing { Spacer(minLength: 0) }
+                Text(column.title)
+                if sort == column {
+                    Image(systemName: ascending ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 7, weight: .bold))
+                }
+                if alignment == .leading { Spacer(minLength: 0) }
+            }
+            .font(.ui(9.5, .semibold))
+            .tracking(0.5)
+            .foregroundStyle(sort == column ? Color.accent : Color.inkFaint)
+            .frame(width: width, alignment: alignment)
+            .frame(maxWidth: width == nil ? .infinity : nil, alignment: alignment)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -10,6 +10,15 @@ import Darwin
 /// battery.
 final class VitalsSampler {
     let cores = CoreSampler()
+    /// Battery and GPU come from the IO registry, which costs an order of
+    /// magnitude more than the sysctl-based readings and changes far more
+    /// slowly. Sampling them every second was most of this app's own CPU use —
+    /// an embarrassing cost for a tool whose purpose is preventing waste.
+    private var slowCounter = 0
+    private static let slowEvery = 5
+    private var cachedBattery: BatteryInfo?
+    private var cachedGPU: GPUInfo?
+
     private var previousNetwork: (inBytes: UInt64, outBytes: UInt64)?
     private var previousNetworkAt: Date?
     private let physicalMemory: UInt64 = {
@@ -46,8 +55,13 @@ final class VitalsSampler {
 
         applyMemory(to: &vitals)
         vitals.loadAverage = loadAverage()
-        vitals.battery = BatteryProbe.read()
-        vitals.gpu = GPUProbe.read()
+        if slowCounter % Self.slowEvery == 0 || cachedBattery == nil {
+            cachedBattery = BatteryProbe.read()
+            cachedGPU = GPUProbe.read()
+        }
+        slowCounter &+= 1
+        vitals.battery = cachedBattery
+        vitals.gpu = cachedGPU
         vitals.memoryPressure = SystemProbe.memoryPressure()
         vitals.disk = SystemProbe.disk()
         applyNetwork(to: &vitals)

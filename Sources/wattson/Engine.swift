@@ -66,8 +66,12 @@ final class Engine: @unchecked Sendable {
     private static let warmupInterval: TimeInterval = 4
     private var recentEvents: [Event] = []
 
-    /// Called after every tick with a fresh view of the machine.
-    var onUpdate: ((EngineState) -> Void)?
+    /// Called after every sample with a fresh view of the machine.
+    ///
+    /// Required by `start` rather than set as a property: an engine whose
+    /// results go nowhere looks exactly like an engine that never ran, and
+    /// that is not a mistake worth being able to make twice.
+    private var onUpdate: ((EngineState) -> Void)?
 
     init(config: Config) {
         self.config = config
@@ -85,15 +89,17 @@ final class Engine: @unchecked Sendable {
             self.actions = Actions(dryRun: newConfig.dryRun)
             self.notifier = Notifier(config: newConfig)
             try? newConfig.save()
+            // Reschedule rather than stop/start: stopping would drop the
+            // update callback along with the timers.
             if intervalChanged, self.timer != nil {
-                self.stop()
-                self.start()
+                self.scheduleTimer(interval: newConfig.tickSeconds)
             }
         }
     }
 
-    func start() {
+    func start(onUpdate: @escaping (EngineState) -> Void) {
         guard timer == nil else { return }
+        self.onUpdate = onUpdate
         log.write("wattson started — tick \(Int(config.tickSeconds))s, "
                 + "mode \(config.dryRun ? "observe-only" : "active")")
 

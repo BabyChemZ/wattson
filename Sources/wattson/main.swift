@@ -33,7 +33,7 @@ guard let command = arguments.first else {
 switch command {
 case "watch":
     let engine = Engine(config: config)
-    engine.start()
+    engine.start { _ in }   // the CLI reports through the log, not the state
     dispatchMain()
 
 case "top":

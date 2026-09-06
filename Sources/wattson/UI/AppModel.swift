@@ -30,7 +30,18 @@ final class AppModel: ObservableObject {
         _config = Published(initialValue: loaded)
         activeLanguage = loaded.language
         state.observeOnly = loaded.dryRun
-        engine.start()
+        engine.start { [weak self] newState in
+            Task { @MainActor in self?.state = newState }
+        }
+
+        // A menu bar icon alone does not tell anyone the rest of the app exists.
+        if !loaded.hasShownWindow || ProcessInfo.processInfo
+            .environment["WATTSON_SHOW_WINDOW"] != nil {
+            Task { @MainActor in
+                self.config.hasShownWindow = true
+                self.openMainWindow()
+            }
+        }
     }
 
     // MARK: Derived views of the state

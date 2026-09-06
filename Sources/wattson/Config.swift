@@ -42,6 +42,10 @@ struct Config: Codable {
 
     // MARK: Notifying
 
+    /// Set once the main window has been shown, so a first launch opens it
+    /// and later ones stay out of the way in the menu bar.
+    var hasShownWindow = false
+
     /// UI language. Defaults to following the system.
     var language: Language = .system
 

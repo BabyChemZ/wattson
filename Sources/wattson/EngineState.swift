@@ -74,6 +74,7 @@ struct EngineState: Equatable {
     /// Machine-wide history, oldest first, for the load chart.
     var cpuTrail: [Double] = []
     var memoryTrail: [Double] = []
+    var gpuTrail: [Double] = []
     /// Battery temperature over time. The whole point of the app is preventing
     /// long hot stretches, so this is the record of whether it worked.
     var temperatureTrail: [Double] = []

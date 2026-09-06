@@ -18,12 +18,17 @@ struct SystemVitals: Equatable {
     var threadCount = 0
 
     var battery: BatteryInfo?
+    var gpu: GPUInfo?
     var memoryPressure: MemoryPressure = .normal
     var disk = DiskInfo()
     var network = NetworkThroughput()
 
+    /// Physical RAM, from hw.memsize. Used and free do not sum to it — macOS
+    /// keeps file-backed pages outside both — so deriving the total from them
+    /// inflates every percentage.
+    var memTotalBytes: UInt64 = 0
+
     var cpuBusy: Double { max(0, min(100, cpuUser + cpuSystem)) }
-    var memTotalBytes: UInt64 { memUsedBytes + memUnusedBytes }
     var memUsedFraction: Double {
         memTotalBytes > 0 ? Double(memUsedBytes) / Double(memTotalBytes) : 0
     }

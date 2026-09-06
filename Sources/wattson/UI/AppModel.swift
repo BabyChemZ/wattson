@@ -212,6 +212,7 @@ final class AppModel: ObservableObject {
         }
         var vitals = SystemVitals()
         vitals.cpuUser = 16.4; vitals.cpuSystem = 6.2; vitals.cpuIdle = 77.4
+        vitals.memTotalBytes = 25_769_803_776
         vitals.memUsedBytes = 16_600_000_000
         vitals.memWiredBytes = 3_090_000_000
         vitals.memCompressedBytes = 6_010_000_000

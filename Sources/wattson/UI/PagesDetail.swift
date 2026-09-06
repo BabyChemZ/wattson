@@ -252,14 +252,30 @@ struct EventsPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Card(title: L("What lands here", "这里记录什么")) {
+                Text(L("Every time a program departs from its own history, this page keeps the full account of it — so you can reconstruct what happened on a machine you were not sitting at.",
+                       "每当一个程序偏离它自己的历史，这一页就留下完整的记录 —— 让你能还原一台你并不在旁边的机器上发生过什么。"))
+                    .font(.ui(11)).foregroundStyle(Color.inkMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    BulletLine(L("Each piece of evidence behind the judgement",
+                                 "判定它异常的每一条依据"))
+                    BulletLine(L("What was done about it — efficiency cores, restart, or nothing",
+                                 "当时做了什么处置 —— 降到能效核、重启，或仅记录"))
+                    BulletLine(L("A stack sample taken at the moment it misbehaved",
+                                 "在它出问题的那一刻抓下的调用栈快照"))
+                }
+            }
+
             if model.state.events.isEmpty {
                 Card {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(L("No events", "暂无事件"))
+                        Text(L("Nothing yet", "暂无事件"))
                             .font(.ui(12.5, .medium)).foregroundStyle(Color.ink)
-                        Text(L("Nothing has behaved out of character since Wattson started.",
-                               "自 Wattson 启动以来，没有程序出现反常行为。"))
+                        Text(L("No program has behaved out of character since Wattson started. An empty page is the good outcome.",
+                               "自 Wattson 启动以来，没有程序出现反常行为。这一页空着是好事。"))
                             .font(.ui(11)).foregroundStyle(Color.inkMuted)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             } else {
@@ -295,6 +311,20 @@ struct EventsPage: View {
                     }
                 }
             }
+        }
+    }
+}
+
+
+struct BulletLine: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Circle().fill(Color.inkFaint).frame(width: 3, height: 3).padding(.top, 6)
+            Text(text).font(.ui(11)).foregroundStyle(Color.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

@@ -64,6 +64,25 @@ case "shoot":
                  language: args.count > 2 ? args[2] : "en")
     exit(0)
 
+case "diag":
+    // Internal: prove the fast pipeline updates without waiting on `top`.
+    let probe = VitalsSampler()
+    for step in 0..<8 {
+        let started = Date()
+        let (v, cores) = probe.sample()
+        let ms = -started.timeIntervalSinceNow * 1000
+        let battery = v.battery.map {
+            String(format: "%.0f%% %.1f°C health %.0f%%",
+                   $0.chargePercent, $0.temperature, $0.healthPercent)
+        } ?? "none"
+        let gpu = v.gpu.map { String(format: "%.0f%%", $0.deviceUtilization) } ?? "none"
+        print(String(format: "%d  %5.1fms  cpu %5.1f%%  mem %4.1f%%  cores %d  gpu %@  batt %@",
+                     step, ms, v.cpuBusy, v.memUsedFraction * 100,
+                     cores.count, gpu as NSString, battery as NSString))
+        Thread.sleep(forTimeInterval: 1)
+    }
+    exit(0)
+
 case "install":
     Install.install()
 

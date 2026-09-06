@@ -2,13 +2,14 @@ import SwiftUI
 
 /// The pages in the sidebar, in order.
 enum Page: String, CaseIterable, Identifiable {
-    case overview, cpu, memory, battery, network, processes, history, events, settings
+    case overview, cpu, gpu, memory, battery, network, processes, history, events, settings
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .overview:  return L("Dashboard", "总览")
         case .cpu:       return L("CPU", "CPU")
+        case .gpu:       return L("GPU", "GPU")
         case .memory:    return L("Memory", "内存")
         case .battery:   return L("Battery", "电池")
         case .network:   return L("Network", "网络与磁盘")
@@ -23,6 +24,7 @@ enum Page: String, CaseIterable, Identifiable {
         switch self {
         case .overview:  return "square.grid.2x2"
         case .cpu:       return "cpu"
+        case .gpu:       return "cpu.fill"
         case .memory:    return "memorychip"
         case .battery:   return "battery.100"
         case .network:   return "network"
@@ -35,7 +37,7 @@ enum Page: String, CaseIterable, Identifiable {
 
     /// Pages are grouped the way the questions are asked: what is the machine
     /// doing, then what is Wattson making of it.
-    static let hardware: [Page] = [.overview, .cpu, .memory, .battery, .network]
+    static let hardware: [Page] = [.overview, .cpu, .gpu, .memory, .battery, .network]
     static let watchdog: [Page] = [.processes, .history, .events, .settings]
 }
 
@@ -165,6 +167,7 @@ struct MainWindowView: View {
         switch model.page {
         case .overview:  OverviewPage(model: model)
         case .cpu:       CPUPage(model: model)
+        case .gpu:       GPUPage(model: model)
         case .memory:    MemoryPage(model: model)
         case .battery:   BatteryPage(model: model)
         case .network:   NetworkPage(model: model)

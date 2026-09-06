@@ -25,6 +25,13 @@ struct OverviewPage: View {
                          tint: model.pressureTint,
                          fraction: model.state.vitals.memUsedFraction)
                 batteryTile
+                StatTile(label: L("GPU", "GPU"),
+                         value: model.state.vitals.gpu
+                            .map { String(format: "%.0f%%", $0.deviceUtilization) } ?? "—",
+                         caption: model.state.vitals.gpu
+                            .map { formatBytes($0.inUseMemory) } ?? "—",
+                         tint: .coreTint,
+                         fraction: (model.state.vitals.gpu?.deviceUtilization ?? 0) / 100)
                 StatTile(label: L("Watching", "监控中"),
                          value: "\(model.state.learnedPrograms)",
                          caption: model.learningTail,
@@ -155,6 +162,72 @@ struct CPUPage: View {
                                 value: String(format: "%.0f%%", core.busy * 100),
                                 fraction: core.busy, tint: tint)
                 }
+            }
+        }
+    }
+}
+
+// MARK: - GPU
+
+struct GPUPage: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        if let gpu = model.state.vitals.gpu {
+            VStack(alignment: .leading, spacing: 16) {
+                Card {
+                    HStack(spacing: 20) {
+                        Donut(segments: [
+                            .init(value: gpu.deviceUtilization, color: .coreTint),
+                            .init(value: max(0, 100 - gpu.deviceUtilization),
+                                  color: .idleTint),
+                        ], centerText: String(format: "%.0f%%", gpu.deviceUtilization),
+                           centerCaption: L("busy", "占用"))
+                        .frame(width: 96, height: 96)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(gpu.name.isEmpty ? model.chipDescription : gpu.name)
+                                .font(.ui(14, .medium)).foregroundStyle(Color.ink)
+                            HStack(spacing: 16) {
+                                LegendDot(color: .coreTint, label: L("Renderer", "渲染器"),
+                                          value: String(format: "%.0f%%",
+                                                        gpu.rendererUtilization))
+                                LegendDot(color: .memoryTint, label: L("Tiler", "分块器"),
+                                          value: String(format: "%.0f%%",
+                                                        gpu.tilerUtilization))
+                            }
+                            Text(L("Video memory in use  \(formatBytes(gpu.inUseMemory))",
+                                   "已用显存  \(formatBytes(gpu.inUseMemory))"))
+                                .font(.figure(11)).foregroundStyle(Color.inkMuted)
+                        }
+                        Spacer()
+                    }
+                }
+
+                if model.state.gpuTrail.count > 1 {
+                    Card(title: L("GPU history", "GPU 历史")) {
+                        AreaChart(values: model.state.gpuTrail, tint: .coreTint)
+                            .frame(height: 120)
+                        Text(model.trailSpanText)
+                            .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
+                    }
+                }
+
+                Card(title: L("Allocation", "分配")) {
+                    DetailGrid(rows: [
+                        (L("In use", "已用"), formatBytes(gpu.inUseMemory)),
+                        (L("Allocated", "已分配"), formatBytes(gpu.allocatedMemory)),
+                        (L("Device utilisation", "设备占用"),
+                         String(format: "%.0f%%", gpu.deviceUtilization)),
+                        (L("Renderer utilisation", "渲染器占用"),
+                         String(format: "%.0f%%", gpu.rendererUtilization)),
+                    ])
+                }
+            }
+        } else {
+            Card {
+                Text(L("No accelerator reported statistics.", "未读取到 GPU 统计信息。"))
+                    .font(.ui(12)).foregroundStyle(Color.inkMuted)
             }
         }
     }

@@ -35,6 +35,10 @@ final class Engine: @unchecked Sendable {
     private let log = Log()
 
     private let queue = DispatchQueue(label: "com.wattson.engine")
+    /// The machine's own readings refresh on their own short timer; only the
+    /// process table waits on `top`.
+    private var vitalsTimer: DispatchSourceTimer?
+    private static let vitalsInterval: TimeInterval = 1
     private var timer: DispatchSourceTimer?
 
     private var previous: Snapshot?
@@ -44,15 +48,15 @@ final class Engine: @unchecked Sendable {
     private var cpuTrail: [Int32: [Double]] = [:]
     private static let trailLength = 40
 
-    private let coreSampler = CoreSampler()
+    private let vitalsSampler = VitalsSampler()
     /// Machine-wide history for the load chart. 240 samples is two hours at the
     /// default tick.
     private var systemCPUTrail: [Double] = []
     private var systemMemoryTrail: [Double] = []
     private static let systemTrailLength = 240
-    private var previousNetCounters: (inBytes: UInt64, outBytes: UInt64)?
     private var temperatureTrail: [Double] = []
     private var powerTrail: [Double] = []
+    private var gpuTrail: [Double] = []
     private var restartTimes: [String: [Date]] = [:]
     private var ticksSinceSave = 0
     private var tickCount = 0
@@ -93,7 +97,58 @@ final class Engine: @unchecked Sendable {
         log.write("wattson started — tick \(Int(config.tickSeconds))s, "
                 + "mode \(config.dryRun ? "observe-only" : "active")")
 
+        // Vitals first and often: these are native calls costing a few
+        // milliseconds, and making them wait on the process table is what left
+        // the window blank — and a laptop briefly claiming to have no battery.
+        let vitals = DispatchSource.makeTimerSource(queue: queue)
+        vitals.schedule(deadline: .now(), repeating: Self.vitalsInterval)
+        vitals.setEventHandler { [weak self] in self?.sampleVitals() }
+        vitalsTimer = vitals
+        vitals.resume()
+
         scheduleTimer(interval: Self.warmupInterval)
+    }
+
+    /// The fast pipeline. Runs every second, touches nothing that shells out.
+    private func sampleVitals() {
+        let (vitals, cores) = vitalsSampler.sample()
+
+        systemCPUTrail.append(vitals.cpuBusy)
+        trim(&systemCPUTrail)
+        systemMemoryTrail.append(vitals.memUsedFraction * 100)
+        trim(&systemMemoryTrail)
+        if let battery = vitals.battery {
+            temperatureTrail.append(battery.temperature)
+            powerTrail.append(abs(battery.watts))
+            trim(&temperatureTrail)
+            trim(&powerTrail)
+        }
+        if let gpu = vitals.gpu {
+            gpuTrail.append(gpu.deviceUtilization)
+            trim(&gpuTrail)
+        }
+
+        publish {
+            // Process counts come from the slow pipeline; keep the last known.
+            var merged = vitals
+            merged.processCount = $0.vitals.processCount
+            merged.threadCount = $0.vitals.threadCount
+            $0.vitals = merged
+            if !cores.isEmpty { $0.cores = cores }
+            $0.efficiencyCoreCount = self.vitalsSampler.cores.efficiencyCoreCount
+            $0.performanceLevelName = self.vitalsSampler.cores.performanceLevelName
+            $0.cpuTrail = self.systemCPUTrail
+            $0.memoryTrail = self.systemMemoryTrail
+            $0.temperatureTrail = self.temperatureTrail
+            $0.powerTrail = self.powerTrail
+            $0.gpuTrail = self.gpuTrail
+        }
+    }
+
+    private func trim(_ trail: inout [Double]) {
+        if trail.count > Self.systemTrailLength {
+            trail.removeFirst(trail.count - Self.systemTrailLength)
+        }
     }
 
     /// The timer is rescheduled once warm-up ends, so the tick rate can change
@@ -108,6 +163,8 @@ final class Engine: @unchecked Sendable {
     }
 
     func stop() {
+        vitalsTimer?.cancel()
+        vitalsTimer = nil
         timer?.cancel()
         timer = nil
         store.save()
@@ -149,23 +206,34 @@ final class Engine: @unchecked Sendable {
     // MARK: - The tick
 
     private func tick() {
+        tickCount += 1
         let warmingUp = tickCount < Self.warmupTicks
+        let interval = warmingUp ? Self.warmupInterval : config.tickSeconds
+        if tickCount == Self.warmupTicks { scheduleTimer(interval: config.tickSeconds) }
+
         publish {
             $0.isSampling = true
             $0.isWarmingUp = warmingUp
         }
+        // Every exit path must leave the UI a next-sample time. Setting it only
+        // on success is what left the countdown reading "starting…" forever
+        // whenever the first tick had no baseline to diff against.
+        defer {
+            publish {
+                $0.isSampling = false
+                $0.tickCount = self.tickCount
+                $0.isWarmingUp = self.tickCount < Self.warmupTicks
+                $0.nextTickAt = Date().addingTimeInterval(interval)
+            }
+        }
 
         guard let snapshot = sampler.snapshot() else {
             log.write("sampling failed; skipping tick")
-            publish { $0.isSampling = false }
             return
         }
         defer { previous = snapshot }
 
-        guard let last = previous else {
-            publish { $0.isSampling = false }
-            return
-        }
+        guard let last = previous else { return }
 
         let deltas = snapshot.delta(since: last)
         var rows: [ProcessRow] = []
@@ -255,69 +323,17 @@ final class Engine: @unchecked Sendable {
                 : $0.cpuPercent > $1.cpuPercent
         }
 
-        let cores = coreSampler.sample()
-
-        // Cheap native probes, gathered every tick alongside the process table.
-        var vitals = snapshot.vitals
-        vitals.battery = BatteryProbe.read()
-        vitals.memoryPressure = SystemProbe.memoryPressure()
-        vitals.disk = SystemProbe.disk()
-
-        let counters = SystemProbe.networkCounters()
-        if let previousCounters = previousNetCounters {
-            let elapsed = max(snapshot.takenAt.timeIntervalSince(last.takenAt), 0.001)
-            vitals.network = NetworkThroughput(
-                bytesInPerSecond: Double(monotonicDelta(counters.inBytes,
-                                                        previousCounters.inBytes)) / elapsed,
-                bytesOutPerSecond: Double(monotonicDelta(counters.outBytes,
-                                                         previousCounters.outBytes)) / elapsed,
-                totalBytesIn: counters.inBytes, totalBytesOut: counters.outBytes)
-        }
-        previousNetCounters = counters
-
-        systemCPUTrail.append(vitals.cpuBusy)
-        if systemCPUTrail.count > Self.systemTrailLength {
-            systemCPUTrail.removeFirst(systemCPUTrail.count - Self.systemTrailLength)
-        }
-        systemMemoryTrail.append(vitals.memUsedFraction * 100)
-        if systemMemoryTrail.count > Self.systemTrailLength {
-            systemMemoryTrail.removeFirst(systemMemoryTrail.count - Self.systemTrailLength)
-        }
-        if let battery = vitals.battery {
-            temperatureTrail.append(battery.temperature)
-            powerTrail.append(abs(battery.watts))
-            if temperatureTrail.count > Self.systemTrailLength {
-                temperatureTrail.removeFirst(temperatureTrail.count - Self.systemTrailLength)
-            }
-            if powerTrail.count > Self.systemTrailLength {
-                powerTrail.removeFirst(powerTrail.count - Self.systemTrailLength)
-            }
-        }
-
-        tickCount += 1
-        let interval = tickCount < Self.warmupTicks
-            ? Self.warmupInterval : config.tickSeconds
-        if tickCount == Self.warmupTicks { scheduleTimer(interval: config.tickSeconds) }
-
         publish {
-            $0.vitals = vitals
-            $0.tickCount = self.tickCount
-            $0.isWarmingUp = self.tickCount < Self.warmupTicks
-            $0.nextTickAt = Date().addingTimeInterval(interval)
-            if !cores.isEmpty { $0.cores = cores }
-            $0.efficiencyCoreCount = self.coreSampler.efficiencyCoreCount
-            $0.performanceLevelName = self.coreSampler.performanceLevelName
-            $0.cpuTrail = self.systemCPUTrail
-            $0.memoryTrail = self.systemMemoryTrail
-            $0.temperatureTrail = self.temperatureTrail
-            $0.powerTrail = self.powerTrail
+            // Only the counts come from `top`; the rest of vitals belongs to
+            // the fast pipeline and must not be overwritten with stale values.
+            $0.vitals.processCount = snapshot.vitals.processCount
+            $0.vitals.threadCount = snapshot.vitals.threadCount
             $0.rows = sorted
             $0.events = self.recentEvents
             $0.learnedPrograms = trained
             $0.learningPrograms = max(0, self.store.baselines.count - trained)
             $0.estimatedMinutesToModel = estimate
             $0.lastTick = Date()
-            $0.isSampling = false
             $0.observeOnly = self.config.dryRun
         }
     }

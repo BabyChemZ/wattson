@@ -227,6 +227,13 @@ final class AppModel: ObservableObject {
 
     // MARK: Presentation helpers
 
+    var coreSummaryText: String {
+        let efficiency = state.efficiencyCoreCount
+        let performance = state.cores.count - efficiency
+        guard state.cores.count > 0 else { return "—" }
+        return "\(state.cores.count) (\(efficiency)E + \(performance)P)"
+    }
+
     var chipDescription: String {
         let efficiency = state.efficiencyCoreCount
         let performance = state.cores.count - efficiency
@@ -247,6 +254,24 @@ final class AppModel: ObservableObject {
         }
         return L("last \(seconds / 3600)h \((seconds % 3600) / 60)m",
                  "最近 \(seconds / 3600) 小时 \((seconds % 3600) / 60) 分")
+    }
+
+    /// Clock labels for a trail's start, middle and end, given one sample per
+    /// vitals tick.
+    func timeAxis(for samples: Int, marks: Int = 3) -> (start: String, mid: [String],
+                                                        end: String) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        let now = Date()
+        // The fast pipeline samples once a second.
+        func label(_ samplesAgo: Int) -> String {
+            formatter.string(from: now.addingTimeInterval(-Double(samplesAgo)))
+        }
+        guard samples > 1 else { return ("", [], formatter.string(from: now)) }
+        let mid = (1..<max(marks, 1)).reversed().map { index in
+            label(samples * index / max(marks, 1))
+        }
+        return (label(samples), mid, formatter.string(from: now))
     }
 
     var pressureTint: Color {
@@ -474,6 +499,17 @@ final class AppModel: ObservableObject {
         }
         state.efficiencyCoreCount = 6
         state.performanceLevelName = "Super"
+        var machine = MachineInfo()
+        machine.modelName = "MacBook Air (13-inch, M5)"
+        machine.chip = "Apple M5"
+        machine.osName = "Tahoe"
+        machine.osVersion = "26.5.2"
+        machine.totalMemory = 25_769_803_776
+        state.machine = machine
+        state.coreNames = Dictionary(uniqueKeysWithValues: (0..<10).map { i in
+            (i, i < 6 ? L("Efficiency core \(i + 1)", "能效核心 \(i + 1)")
+                      : "Super \(L("core", "核心")) \(i - 5)")
+        })
         state.cpuTrail = trail(22, 9, 120)
         state.memoryTrail = trail(66, 4, 120)
         state.temperatureTrail = trail(31, 4, 120)

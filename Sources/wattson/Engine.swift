@@ -49,6 +49,7 @@ final class Engine: @unchecked Sendable {
     private static let trailLength = 40
 
     private let vitalsSampler = VitalsSampler()
+    private lazy var machine = MachineInfo.read(cores: vitalsSampler.cores)
     /// Machine-wide history for the load chart. 240 samples is two hours at the
     /// default tick.
     private var systemCPUTrail: [Double] = []
@@ -154,6 +155,12 @@ final class Engine: @unchecked Sendable {
             if !cores.isEmpty { $0.cores = cores }
             $0.efficiencyCoreCount = self.vitalsSampler.cores.efficiencyCoreCount
             $0.performanceLevelName = self.vitalsSampler.cores.performanceLevelName
+            $0.machine = self.machine
+            if $0.coreNames.isEmpty, !cores.isEmpty {
+                $0.coreNames = Dictionary(uniqueKeysWithValues: cores.map {
+                    ($0.index, self.vitalsSampler.cores.name(for: $0.index))
+                })
+            }
             $0.cpuTrail = self.systemCPUTrail
             $0.memoryTrail = self.systemMemoryTrail
             $0.temperatureTrail = self.temperatureTrail

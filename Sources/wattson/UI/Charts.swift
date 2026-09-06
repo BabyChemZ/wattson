@@ -310,37 +310,60 @@ struct BarChart: View {
             guard !buckets.isEmpty else { return }
 
             let slot = size.width / CGFloat(columns)
-            let barWidth = max(2, slot * 0.55)
+            let barWidth = max(2, slot * 0.58)
 
-            // Opacity tracks height only gently. A chart of a steady value —
-            // memory sits near the same level all day — should read as calm,
-            // not as a wall of saturated colour.
-            for (index, value) in buckets.enumerated() {
-                let ratio = min(max(value / ceiling, 0), 1)
-                let height = max(2, size.height * ratio)
+            // Two layers per column: the bucket's peak in a faint wash, its
+            // mean solid on top. Averaging alone flattens the spikes that make
+            // a load chart worth looking at — a burst lasting a few seconds
+            // disappears into the surrounding minute. This keeps the spike
+            // visible as headroom above the body of the bar while the solid
+            // part still reads as the level.
+            for (index, bucket) in buckets.enumerated() {
                 let x = CGFloat(index) * slot + (slot - barWidth) / 2
-                let rect = CGRect(x: x, y: size.height - height,
-                                  width: barWidth, height: height)
+
+                let peakRatio = min(max(bucket.peak / ceiling, 0), 1)
+                if peakRatio > 0 {
+                    let peakHeight = max(2, size.height * peakRatio)
+                    context.fill(
+                        Path(roundedRect: CGRect(x: x, y: size.height - peakHeight,
+                                                 width: barWidth, height: peakHeight),
+                             cornerRadius: min(barWidth / 2, 2)),
+                        with: .color(tint.opacity(0.22)))
+                }
+
+                let meanRatio = min(max(bucket.mean / ceiling, 0), 1)
+                let meanHeight = max(1.5, size.height * meanRatio)
                 context.fill(
-                    Path(roundedRect: rect, cornerRadius: min(barWidth / 2, 2)),
-                    with: .color(tint.opacity(0.42 + 0.33 * ratio)))
+                    Path(roundedRect: CGRect(x: x, y: size.height - meanHeight,
+                                             width: barWidth, height: meanHeight),
+                         cornerRadius: min(barWidth / 2, 2)),
+                    with: .color(tint.opacity(0.5 + 0.3 * meanRatio)))
             }
         }
     }
 
-    /// Average the series into `count` buckets, oldest first. Newer samples end
-    /// up on the right, and a short series simply occupies fewer columns rather
-    /// than being stretched across the whole width.
-    static func bucket(_ values: [Double], into count: Int) -> [Double] {
+    struct Bucket {
+        var mean: Double
+        var peak: Double
+    }
+
+    /// Reduce the series to `count` buckets, oldest first, keeping both the
+    /// average and the highest sample in each. A short series occupies fewer
+    /// columns rather than being stretched across the full width.
+    static func bucket(_ values: [Double], into count: Int) -> [Bucket] {
         guard count > 0, !values.isEmpty else { return [] }
-        guard values.count > count else { return values }
+        guard values.count > count else {
+            return values.map { Bucket(mean: $0, peak: $0) }
+        }
 
         let size = Double(values.count) / Double(count)
         return (0..<count).map { index in
             let start = Int(Double(index) * size)
             let end = max(start + 1, Int(Double(index + 1) * size))
             let slice = values[start..<min(end, values.count)]
-            return slice.isEmpty ? 0 : slice.reduce(0, +) / Double(slice.count)
+            guard !slice.isEmpty else { return Bucket(mean: 0, peak: 0) }
+            return Bucket(mean: slice.reduce(0, +) / Double(slice.count),
+                          peak: slice.max() ?? 0)
         }
     }
 }
@@ -388,5 +411,91 @@ struct ProcessBar: View {
                 }
             }
         )
+    }
+}
+
+
+/// A labelled rule, for dividing a card into sections without nesting cards.
+struct SectionRule: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(text.uppercased())
+                .font(.ui(9, .semibold))
+                .tracking(0.7)
+                .foregroundStyle(Color.inkFaint)
+            Rectangle()
+                .fill(Color.hairline)
+                .frame(height: 0.5)
+        }
+        .padding(.top, 2)
+    }
+}
+
+/// Legend entry with the colour swatch and value on one baseline, so a column
+/// of them aligns down the page.
+struct LegendRow: View {
+    let color: Color
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 7, height: 7)
+            Text(label).font(.ui(11)).foregroundStyle(Color.inkMuted)
+            Spacer(minLength: 12)
+            Text(value).font(.figure(11, .medium)).foregroundStyle(Color.ink)
+        }
+    }
+}
+
+
+/// A chart with its axes labelled.
+///
+/// A trace without a scale is decoration: you can see that something rose,
+/// but not to what, or when. The guide values are drawn against the same
+/// geometry the chart uses so labels line up with the rules exactly.
+struct AxisChart<Content: View>: View {
+    let ceiling: Double
+    var guides: [Double] = [25, 50, 75, 100]
+    var unit: String = "%"
+    /// Left edge and right edge of the time range, already formatted.
+    var startLabel: String = ""
+    var endLabel: String = ""
+    var midLabels: [String] = []
+    var height: CGFloat = 104
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 7) {
+                ZStack(alignment: .topLeading) {
+                    // Reserve the column, then place each label at its rule.
+                    Color.clear.frame(width: 30, height: height)
+                    ForEach(guides, id: \.self) { guide in
+                        Text("\(Int(guide))\(unit)")
+                            .font(.figure(8.5))
+                            .foregroundStyle(Color.inkFaint)
+                            .frame(width: 30, alignment: .trailing)
+                            .offset(y: height * (1 - CGFloat(min(guide / ceiling, 1))) - 5)
+                    }
+                }
+                content.frame(height: height)
+            }
+
+            HStack(spacing: 0) {
+                Color.clear.frame(width: 37)
+                Text(startLabel)
+                ForEach(midLabels, id: \.self) { label in
+                    Spacer()
+                    Text(label)
+                }
+                Spacer()
+                Text(endLabel)
+            }
+            .font(.figure(8.5))
+            .foregroundStyle(Color.inkFaint)
+        }
     }
 }

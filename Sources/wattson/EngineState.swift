@@ -78,6 +78,8 @@ struct EngineState: Equatable {
     var cores: [CoreLoad] = []
     var efficiencyCoreCount = 0
     var performanceLevelName = "Performance"
+    var coreNames: [Int: String] = [:]
+    var machine = MachineInfo()
     /// Machine-wide history, oldest first, for the load chart.
     var cpuTrail: [Double] = []
     var memoryTrail: [Double] = []

@@ -7,6 +7,8 @@ struct OverviewPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            machineCard
+
             HStack(spacing: 12) {
                 StatTile(label: L("CPU", "CPU"),
                          value: String(format: "%.0f%%", model.state.vitals.cpuBusy),
@@ -77,6 +79,36 @@ struct OverviewPage: View {
         }
     }
 
+    /// Identity first: which machine this is, and what it is made of.
+    private var machineCard: some View {
+        let machine = model.state.machine
+        return Card {
+            VStack(alignment: .leading, spacing: 11) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(machine.modelName)
+                        .font(.ui(15, .semibold)).foregroundStyle(Color.ink)
+                    Text(machine.osName.isEmpty
+                         ? "macOS \(machine.osVersion)"
+                         : "macOS \(machine.osName) \(machine.osVersion)")
+                        .font(.ui(11)).foregroundStyle(Color.inkMuted)
+                }
+                Hairline()
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 24),
+                                         count: 4),
+                          alignment: .leading, spacing: 4) {
+                    LegendRow(color: .clear, label: L("Chip", "处理器"),
+                              value: machine.chip)
+                    LegendRow(color: .clear, label: L("Cores", "核心"),
+                              value: model.coreSummaryText)
+                    LegendRow(color: .clear, label: L("Memory", "内存"),
+                              value: formatBytes(machine.totalMemory))
+                    LegendRow(color: .clear, label: L("Storage", "磁盘"),
+                              value: formatBytes(model.state.vitals.disk.totalBytes))
+                }
+            }
+        }
+    }
+
     private var batteryTile: some View {
         Group {
             if let battery = model.state.vitals.battery {
@@ -100,66 +132,41 @@ struct OverviewPage: View {
 struct CPUPage: View {
     @ObservedObject var model: AppModel
 
+    private var vitals: SystemVitals { model.state.vitals }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             Card {
-                HStack(spacing: 26) {
-                    Donut(segments: [
-                        .init(value: model.state.vitals.sensors.cpu ?? 0, color: .alertTint),
-                        .init(value: max(0, 100 - (model.state.vitals.sensors.cpu ?? 0)),
-                              color: .idleTint),
-                    ], centerText: model.temperatureText(model.state.vitals.sensors.cpu),
-                       centerCaption: L("temp", "温度"), lineWidth: 7)
-                    .frame(width: 68, height: 68)
-
-                    Donut(segments: [
-                        .init(value: model.state.vitals.cpuSystem, color: .systemTint),
-                        .init(value: model.state.vitals.cpuUser, color: .cpuTint),
-                        .init(value: model.state.vitals.cpuIdle, color: .idleTint),
-                    ], centerText: String(format: "%.0f%%", model.state.vitals.cpuBusy),
-                       centerCaption: L("busy", "占用"))
-                    .frame(width: 96, height: 96)
-
-                    Donut(segments: [
-                        .init(value: min(model.state.vitals.loadAverage.first ?? 0,
-                                         Double(max(model.state.cores.count, 1))),
-                              color: .memoryTint),
-                        .init(value: max(0, Double(max(model.state.cores.count, 1))
-                                         - (model.state.vitals.loadAverage.first ?? 0)),
-                              color: .idleTint),
-                    ], centerText: model.loadText,
-                       centerCaption: L("load", "负载"), lineWidth: 7)
-                    .frame(width: 68, height: 68)
-
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(model.chipDescription)
-                            .font(.ui(14, .medium)).foregroundStyle(Color.ink)
-                        DetailGrid(rows: model.cpuDetailRows())
-                    }
-                    Spacer(minLength: 0)
+                HStack(alignment: .center, spacing: 20) {
+                    dials
+                    Divider().frame(height: 82)
+                    breakdown
                 }
             }
 
-            Card(title: L("Load history", "负载历史")) {
-                BarChart(values: model.state.cpuTrail, tint: .cpuTint)
-                    .frame(height: 130)
-                Text(model.trailSpanText)
-                    .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
-            }
+            Card {
+                SectionRule(text: L("Load history", "负载历史"))
+                let axis = model.timeAxis(for: model.state.cpuTrail.count)
+                AxisChart(ceiling: 100, startLabel: axis.start,
+                          endLabel: axis.end, midLabels: axis.mid) {
+                    BarChart(values: model.state.cpuTrail, tint: .cpuTint)
+                }
+                Text(L("solid: average · faint: peak in that span",
+                       "实色：均值 · 淡色：该段峰值"))
+                    .font(.ui(9)).foregroundStyle(Color.inkFaint)
 
-            if let frequency = model.state.vitals.frequency {
-                Card(title: L("Clock speed", "运行频率")) {
-                    HStack(spacing: 26) {
-                        FrequencyReadout(
-                            label: L("Efficiency cores", "能效核心"),
-                            mhz: frequency.efficiencyMHz,
-                            active: frequency.efficiencyActive, tint: .coreTint)
-                        FrequencyReadout(
-                            label: L("\(model.state.performanceLevelName) cores",
-                                     "\(model.state.performanceLevelName) 核心"),
-                            mhz: frequency.performanceMHz,
-                            active: frequency.performanceActive, tint: .cpuTint)
-                        FrequencyReadout(label: L("All cores", "全部核心"),
+                if let frequency = vitals.frequency {
+                    SectionRule(text: L("Clock speed", "运行频率"))
+                    HStack(spacing: 22) {
+                        FrequencyReadout(label: L("Efficiency", "能效核"),
+                                         mhz: frequency.efficiencyMHz,
+                                         active: frequency.efficiencyActive,
+                                         tint: .coreTint)
+                        FrequencyReadout(label: model.state.performanceLevelName,
+                                         mhz: frequency.performanceMHz,
+                                         active: frequency.performanceActive,
+                                         tint: .cpuTint)
+                        FrequencyReadout(label: L("All cores", "全部"),
                                          mhz: frequency.averageMHz,
                                          active: nil, tint: .inkMuted)
                         Spacer()
@@ -167,18 +174,13 @@ struct CPUPage: View {
                 }
             }
 
-            Card(title: L("Load average", "平均负载")) {
-                DetailGrid(rows: model.loadAverageRows())
-            }
-
             if !model.state.cores.isEmpty {
-                Card(title: L("Per-core load", "每核心负载")) {
-                    coreCluster(L("Efficiency cores", "能效核心"),
+                Card {
+                    SectionRule(text: L("Per-core load", "每核心负载"))
+                    coreCluster(L("Efficiency", "能效核心"),
                                 model.efficiencyCores, .coreTint)
                     if !model.performanceCores.isEmpty {
-                        Divider().padding(.vertical, 4)
-                        coreCluster(L("\(model.state.performanceLevelName) cores",
-                                      "\(model.state.performanceLevelName) 核心"),
+                        coreCluster(model.state.performanceLevelName,
                                     model.performanceCores, .cpuTint)
                     }
                 }
@@ -186,17 +188,102 @@ struct CPUPage: View {
         }
     }
 
+    /// Temperature, utilisation and load, read left to right.
+    private var dials: some View {
+        HStack(spacing: 18) {
+            Donut(segments: [
+                .init(value: vitals.sensors.cpu ?? 0, color: .alertTint),
+                .init(value: max(0, 100 - (vitals.sensors.cpu ?? 0)), color: .idleTint),
+            ], centerText: model.temperatureText(vitals.sensors.cpu),
+               centerCaption: L("temp", "温度"), lineWidth: 6)
+            .frame(width: 62, height: 62)
+
+            Donut(segments: [
+                .init(value: vitals.cpuSystem, color: .systemTint),
+                .init(value: vitals.cpuUser, color: .cpuTint),
+                .init(value: vitals.cpuIdle, color: .idleTint),
+            ], centerText: String(format: "%.0f%%", vitals.cpuBusy),
+               centerCaption: L("busy", "占用"), lineWidth: 9)
+            .frame(width: 88, height: 88)
+
+            Donut(segments: [
+                .init(value: min(vitals.loadAverage.first ?? 0,
+                                 Double(max(model.state.cores.count, 1))),
+                      color: .memoryTint),
+                .init(value: max(0, Double(max(model.state.cores.count, 1))
+                                 - (vitals.loadAverage.first ?? 0)), color: .idleTint),
+            ], centerText: model.loadText,
+               centerCaption: L("load", "负载"), lineWidth: 6)
+            .frame(width: 62, height: 62)
+        }
+    }
+
+    /// The numbers beside the dials, in two columns so the card stays short.
+    private var breakdown: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(model.chipDescription)
+                .font(.ui(13, .semibold)).foregroundStyle(Color.ink)
+
+            // Two flexible columns rather than three fixed ones: at the
+            // window's default width three columns ran past the right edge and
+            // the last one was clipped away entirely.
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 26),
+                                GridItem(.flexible(), spacing: 26)],
+                      alignment: .leading, spacing: 4) {
+                LegendRow(color: .systemTint, label: L("System", "系统"),
+                          value: String(format: "%.0f%%", vitals.cpuSystem))
+                LegendRow(color: .coreTint, label: L("Efficiency", "能效核"),
+                          value: String(format: "%.0f%%",
+                                        model.clusterLoad(model.efficiencyCores)))
+                LegendRow(color: .cpuTint, label: L("User", "用户"),
+                          value: String(format: "%.0f%%", vitals.cpuUser))
+                LegendRow(color: .cpuTint, label: model.state.performanceLevelName,
+                          value: String(format: "%.0f%%",
+                                        model.clusterLoad(model.performanceCores)))
+                LegendRow(color: .idleTint, label: L("Idle", "闲置"),
+                          value: String(format: "%.0f%%", vitals.cpuIdle))
+                LegendRow(color: .clear, label: L("Load avg", "平均负载"),
+                          value: model.loadAverageText)
+                LegendRow(color: .clear, label: L("Uptime", "启动时间"),
+                          value: model.uptimeDescription)
+                LegendRow(color: .clear, label: L("Threads", "线程"),
+                          value: "\(vitals.threadCount)")
+            }
+        }
+    }
+
     private func coreCluster(_ title: String, _ cores: [CoreLoad],
                              _ tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(text: title)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 14),
-                                GridItem(.flexible(), spacing: 14)], spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title).font(.ui(10.5)).foregroundStyle(Color.inkMuted)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 16),
+                                GridItem(.flexible(), spacing: 16)], spacing: 7) {
                 ForEach(cores) { core in
-                    LabelledBar(label: "#\(core.index)",
+                    LabelledBar(label: model.state.coreNames[core.index]
+                                    ?? "#\(core.index)",
                                 value: String(format: "%.0f%%", core.busy * 100),
                                 fraction: core.busy, tint: tint)
                 }
+            }
+        }
+    }
+}
+
+/// One cluster's clock, with how much of the interval it was awake.
+struct FrequencyReadout: View {
+    let label: String
+    let mhz: Double?
+    let active: Double?
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).font(.ui(10.5)).foregroundStyle(Color.inkMuted)
+            Text(mhz.map { String(format: "%.0f MHz", $0) } ?? "—")
+                .font(.figure(17, .medium)).foregroundStyle(tint)
+            if let active {
+                Text(String(format: L("%.0f%% awake", "唤醒 %.0f%%"), active * 100))
+                    .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
             }
         }
     }
@@ -317,15 +404,14 @@ struct MemoryPage: View {
             }
 
             Card(title: L("Memory history", "内存历史")) {
-                BarChart(values: model.state.memoryTrail, tint: .memoryTint)
-                    .frame(height: 110)
-                HStack {
-                    Text(model.trailSpanText)
-                    Spacer()
-                    Text(L("Swap \(formatBytes(vitals.swapUsedBytes))",
-                           "交换区 \(formatBytes(vitals.swapUsedBytes))"))
+                let axis = model.timeAxis(for: model.state.memoryTrail.count)
+                AxisChart(ceiling: 100, startLabel: axis.start,
+                          endLabel: axis.end, midLabels: axis.mid) {
+                    BarChart(values: model.state.memoryTrail, tint: .memoryTint)
                 }
-                .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
+                Text(L("Swap \(formatBytes(vitals.swapUsedBytes))",
+                       "交换区 \(formatBytes(vitals.swapUsedBytes))"))
+                    .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
             }
 
             Card(title: L("Largest resident", "占用内存最多")) {
@@ -472,26 +558,6 @@ struct NetworkPage: View {
         }
     }
 }
-/// One cluster's clock, with how much of the interval it was awake.
-struct FrequencyReadout: View {
-    let label: String
-    let mhz: Double?
-    let active: Double?
-    let tint: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.ui(10.5)).foregroundStyle(Color.inkMuted)
-            Text(mhz.map { String(format: "%.0f MHz", $0) } ?? "—")
-                .font(.figure(17, .medium)).foregroundStyle(tint)
-            if let active {
-                Text(String(format: L("%.0f%% awake", "唤醒 %.0f%%"), active * 100))
-                    .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
-            }
-        }
-    }
-}
-
 // MARK: - Sensors
 
 struct SensorsPage: View {

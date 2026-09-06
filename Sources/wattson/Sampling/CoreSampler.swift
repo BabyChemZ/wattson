@@ -57,6 +57,16 @@ final class CoreSampler {
 
     func isEfficiencyCore(_ index: Int) -> Bool { index < efficiencyCoreCount }
 
+    /// "Efficiency core 3" rather than "#2" — the cluster and a one-based
+    /// position within it, which is how the hardware is actually described.
+    func name(for index: Int) -> String {
+        if isEfficiencyCore(index) {
+            return L("Efficiency core \(index + 1)", "能效核心 \(index + 1)")
+        }
+        let position = index - efficiencyCoreCount + 1
+        return "\(performanceLevelName) \(L("core", "核心")) \(position)"
+    }
+
     /// Utilisation since the previous call. The first call has no baseline and
     /// returns nothing.
     func sample() -> [CoreLoad] {

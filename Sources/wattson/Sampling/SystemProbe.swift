@@ -109,6 +109,10 @@ enum MemoryPressure: Int, Equatable {
 struct DiskInfo: Equatable {
     var totalBytes: UInt64 = 0
     var freeBytes: UInt64 = 0
+    var readBytesPerSecond: Double = 0
+    var writeBytesPerSecond: Double = 0
+    var totalRead: UInt64 = 0
+    var totalWritten: UInt64 = 0
     var usedBytes: UInt64 { totalBytes > freeBytes ? totalBytes - freeBytes : 0 }
     var usedFraction: Double {
         totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) : 0
@@ -122,7 +126,61 @@ struct NetworkThroughput: Equatable {
     var totalBytesOut: UInt64 = 0
 }
 
+/// macOS's own verdict on how hot the machine is.
+///
+/// Apple Silicon exposes no public temperature sensor — `AppleSMC` is not even
+/// present in the IO registry — so rather than reverse-engineer IOReport for a
+/// number, this reports the judgement the OS itself acts on. It is arguably
+/// the more useful signal: it is what actually triggers throttling.
+enum ThermalState: Int, Equatable {
+    case nominal, fair, serious, critical
+
+    var label: String {
+        switch self {
+        case .nominal:  return L("Normal", "正常")
+        case .fair:     return L("Warm", "偏热")
+        case .serious:  return L("Hot", "过热")
+        case .critical: return L("Throttling", "已降频")
+        }
+    }
+
+    static func current() -> ThermalState {
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal:  return .nominal
+        case .fair:     return .fair
+        case .serious:  return .serious
+        case .critical: return .critical
+        @unknown default: return .nominal
+        }
+    }
+}
+
 enum SystemProbe {
+    static func thermalState() -> ThermalState { .current() }
+
+    /// Cumulative bytes through every block storage driver.
+    static func diskCounters() -> (read: UInt64, written: UInt64) {
+        var iterator = io_iterator_t()
+        guard IOServiceGetMatchingServices(
+                kIOMainPortDefault, IOServiceMatching("IOBlockStorageDriver"),
+                &iterator) == KERN_SUCCESS else { return (0, 0) }
+        defer { IOObjectRelease(iterator) }
+
+        var read: UInt64 = 0
+        var written: UInt64 = 0
+        while case let service = IOIteratorNext(iterator), service != 0 {
+            defer { IOObjectRelease(service) }
+            var unmanaged: Unmanaged<CFMutableDictionary>?
+            guard IORegistryEntryCreateCFProperties(
+                    service, &unmanaged, kCFAllocatorDefault, 0) == KERN_SUCCESS,
+                  let props = unmanaged?.takeRetainedValue() as? [String: Any],
+                  let stats = props["Statistics"] as? [String: Any] else { continue }
+            read += UInt64(stats["Bytes (Read)"] as? Int ?? 0)
+            written += UInt64(stats["Bytes (Write)"] as? Int ?? 0)
+        }
+        return (read, written)
+    }
+
     static func memoryPressure() -> MemoryPressure {
         var level: Int32 = 1
         var size = MemoryLayout<Int32>.size
@@ -160,6 +218,14 @@ enum SystemProbe {
             totalOut += UInt64(data.ifi_obytes)
         }
         return (totalIn, totalOut)
+    }
+
+    /// Seconds since boot.
+    static func uptime() -> TimeInterval {
+        var boot = timeval()
+        var size = MemoryLayout<timeval>.size
+        guard sysctlbyname("kern.boottime", &boot, &size, nil, 0) == 0 else { return 0 }
+        return Date().timeIntervalSince1970 - Double(boot.tv_sec)
     }
 
     /// Marketing name of the chip, e.g. "Apple M5".

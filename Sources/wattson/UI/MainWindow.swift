@@ -2,7 +2,8 @@ import SwiftUI
 
 /// The pages in the sidebar, in order.
 enum Page: String, CaseIterable, Identifiable {
-    case overview, cpu, gpu, memory, battery, network, processes, history, events, settings
+    case overview, cpu, gpu, memory, sensors, battery, disk, network,
+         processes, history, events, settings
     var id: String { rawValue }
 
     var title: String {
@@ -11,8 +12,10 @@ enum Page: String, CaseIterable, Identifiable {
         case .cpu:       return L("CPU", "CPU")
         case .gpu:       return L("GPU", "GPU")
         case .memory:    return L("Memory", "内存")
+        case .sensors:   return L("Sensors", "传感器")
+        case .disk:      return L("Disk", "磁盘")
         case .battery:   return L("Battery", "电池")
-        case .network:   return L("Network", "网络与磁盘")
+        case .network:   return L("Network", "网络")
         case .processes: return L("Processes", "进程")
         case .history:   return L("History", "历史基线")
         case .events:    return L("Events", "事件")
@@ -26,6 +29,8 @@ enum Page: String, CaseIterable, Identifiable {
         case .cpu:       return "cpu"
         case .gpu:       return "cpu.fill"
         case .memory:    return "memorychip"
+        case .sensors:   return "thermometer.medium"
+        case .disk:      return "internaldrive"
         case .battery:   return "battery.100"
         case .network:   return "network"
         case .processes: return "list.bullet"
@@ -37,7 +42,8 @@ enum Page: String, CaseIterable, Identifiable {
 
     /// Pages are grouped the way the questions are asked: what is the machine
     /// doing, then what is Wattson making of it.
-    static let hardware: [Page] = [.overview, .cpu, .gpu, .memory, .battery, .network]
+    static let hardware: [Page] = [.overview, .cpu, .gpu, .memory, .sensors,
+                                   .battery, .disk, .network]
     static let watchdog: [Page] = [.processes, .history, .events, .settings]
 }
 
@@ -169,6 +175,8 @@ struct MainWindowView: View {
         case .cpu:       CPUPage(model: model)
         case .gpu:       GPUPage(model: model)
         case .memory:    MemoryPage(model: model)
+        case .sensors:   SensorsPage(model: model)
+        case .disk:      DiskPage(model: model)
         case .battery:   BatteryPage(model: model)
         case .network:   NetworkPage(model: model)
         case .processes: ProcessesPage(model: model)

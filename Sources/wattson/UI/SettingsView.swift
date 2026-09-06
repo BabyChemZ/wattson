@@ -22,6 +22,8 @@ struct SettingsView: View {
 
                 behaviour
                 notifications
+                menuBar
+                alerts
                 sensitivity
                 startup
                 appearance
@@ -136,6 +138,51 @@ struct SettingsView: View {
 }
 
 extension SettingsView {
+    /// Which live readings ride in the menu bar.
+    var menuBar: some View {
+        Card(title: L("Menu bar", "菜单栏")) {
+            Text(L("Readings shown next to the icon.", "显示在图标旁边的实时读数。"))
+                .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
+            ForEach(MenuBarMetric.allCases) { metric in
+                Toggle(isOn: Binding(
+                    get: { model.config.menuBarMetrics.contains(metric) },
+                    set: { on in
+                        if on {
+                            if !model.config.menuBarMetrics.contains(metric) {
+                                model.config.menuBarMetrics.append(metric)
+                            }
+                        } else {
+                            model.config.menuBarMetrics.removeAll { $0 == metric }
+                        }
+                    })) {
+                    Text(metric.title).font(.ui(12)).foregroundStyle(Color.ink)
+                }
+                .toggleStyle(.switch)
+                .tint(Color.accent)
+            }
+        }
+    }
+
+    /// Plain thresholds, separate from the behavioural detector: sometimes you
+    /// just want to be told when a number crosses a line.
+    var alerts: some View {
+        Card(title: L("Threshold alerts", "阈值告警")) {
+            Text(L("Independent of the behavioural detector — these fire on the number alone.",
+                   "与行为检测相互独立 —— 这些只看数值本身。"))
+                .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+            ThresholdRow(label: L("Memory above", "内存高于"),
+                         suffix: "%", range: 50...99, step: 1,
+                         value: $model.config.alertMemoryPercent)
+            ThresholdRow(label: L("Battery temperature above", "电池温度高于"),
+                         suffix: "°C", range: 30...50, step: 1,
+                         value: $model.config.alertBatteryTemperature)
+            ThresholdRow(label: L("Total CPU above", "整机 CPU 高于"),
+                         suffix: "%", range: 50...100, step: 5,
+                         value: $model.config.alertCPUPercent)
+        }
+    }
+
     /// Language picker. Placed last: it is the one setting you touch once.
     var appearance: some View {
         Card(title: L("Language", "语言")) {
@@ -223,5 +270,41 @@ struct PlainButton: View {
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+}
+
+
+/// An optional numeric threshold: a switch to enable it and a stepper to set it.
+struct ThresholdRow: View {
+    let label: String
+    let suffix: String
+    let range: ClosedRange<Double>
+    let step: Double
+    @Binding var value: Double?
+
+    var body: some View {
+        HStack {
+            Toggle(isOn: Binding(
+                get: { value != nil },
+                set: { value = $0 ? (range.lowerBound + range.upperBound) / 2 : nil })) {
+                Text(label).font(.ui(12)).foregroundStyle(Color.ink)
+            }
+            .toggleStyle(.switch)
+            .tint(Color.accent)
+
+            Spacer()
+
+            if let current = value {
+                Stepper(value: Binding(get: { current }, set: { value = $0 }),
+                        in: range, step: step) {
+                    Text(String(format: "%.0f%@", current, suffix))
+                        .font(.figure(11.5, .medium)).foregroundStyle(Color.inkMuted)
+                }
+                .labelsHidden()
+                Text(String(format: "%.0f%@", current, suffix))
+                    .font(.figure(11.5, .medium)).foregroundStyle(Color.inkMuted)
+                    .frame(width: 46, alignment: .trailing)
+            }
+        }
     }
 }

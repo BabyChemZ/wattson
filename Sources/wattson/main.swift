@@ -112,6 +112,24 @@ case "testmodes":
     }
     exit(0)
 
+case "sensors":
+    guard let smc = SMC() else { print("SMC unavailable"); exit(1) }
+    let temps = smc.temperatures()
+    print("\(temps.count) temperature sensors:")
+    for (key, value) in temps.sorted(by: { $0.value > $1.value }).prefix(24) {
+        print(String(format: "  %@  %6.1f °C", key as NSString, value))
+    }
+    let grouped = SensorReadings.from(temps, fans: smc.fanSpeeds())
+    print(String(format: "\ngrouped:  P-core %@  E-core %@  GPU %@  skin %@  power %@",
+                 grouped.performanceCore.map { String(format: "%.1f°", $0) } ?? "-" as NSString,
+                 grouped.efficiencyCore.map { String(format: "%.1f°", $0) } ?? "-" as NSString,
+                 grouped.gpu.map { String(format: "%.1f°", $0) } ?? "-" as NSString,
+                 grouped.skin.map { String(format: "%.1f°", $0) } ?? "-" as NSString,
+                 grouped.powerDelivery.map { String(format: "%.1f°", $0) } ?? "-" as NSString))
+    let fans = smc.fanSpeeds()
+    print(fans.isEmpty ? "\nno fans" : "\nfans: \(fans.map { String(format: "%.0f rpm", $0) })")
+    exit(0)
+
 case "install":
     Install.install()
 

@@ -57,6 +57,10 @@ final class Engine: @unchecked Sendable {
     private var temperatureTrail: [Double] = []
     private var powerTrail: [Double] = []
     private var gpuTrail: [Double] = []
+    /// Last time each threshold fired, so a sustained condition notifies once
+    /// rather than every second.
+    private var lastAlert: [String: Date] = [:]
+    private static let alertCooldown: TimeInterval = 1800
     private var restartTimes: [String: [Date]] = [:]
     private var ticksSinceSave = 0
     private var tickCount = 0
@@ -134,6 +138,8 @@ final class Engine: @unchecked Sendable {
             trim(&gpuTrail)
         }
 
+        checkThresholds(vitals)
+
         publish {
             // Process counts come from the slow pipeline; keep the last known.
             var merged = vitals
@@ -148,6 +154,41 @@ final class Engine: @unchecked Sendable {
             $0.temperatureTrail = self.temperatureTrail
             $0.powerTrail = self.powerTrail
             $0.gpuTrail = self.gpuTrail
+        }
+    }
+
+    /// Plain numeric alerts, deliberately separate from the behavioural
+    /// detector: sometimes the useful thing is simply that a number crossed a
+    /// line, regardless of whether it is normal for this machine.
+    private func checkThresholds(_ vitals: SystemVitals) {
+        func fire(_ id: String, _ title: String, _ body: String) {
+            if let last = lastAlert[id],
+               Date().timeIntervalSince(last) < Self.alertCooldown { return }
+            lastAlert[id] = Date()
+            log.write("threshold: \(body)")
+            notifier.send(title: title, body: body)
+        }
+
+        if let limit = config.alertMemoryPercent {
+            let used = vitals.memUsedFraction * 100
+            if used >= limit {
+                fire("memory", L("Memory is high", "内存占用偏高"),
+                     String(format: L("%.0f%% used · pressure %@",
+                                      "已用 %.0f%% · 压力%@"),
+                            used, vitals.memoryPressure.label as NSString))
+            }
+        }
+        if let limit = config.alertBatteryTemperature,
+           let battery = vitals.battery, battery.temperature >= limit {
+            fire("battery-temp", L("Battery is running warm", "电池温度偏高"),
+                 String(format: L("%.1f°C — sustained heat is what ages the pack",
+                                  "%.1f°C —— 持续高温是电池老化的主因"),
+                        battery.temperature))
+        }
+        if let limit = config.alertCPUPercent, vitals.cpuBusy >= limit {
+            fire("cpu", L("CPU is saturated", "CPU 接近满载"),
+                 String(format: L("%.0f%% busy across the machine", "整机占用 %.0f%%"),
+                        vitals.cpuBusy))
         }
     }
 

@@ -42,6 +42,13 @@ struct Config: Codable {
 
     // MARK: Notifying
 
+    /// Which live readings to show in the menu bar itself.
+    var menuBarMetrics: [MenuBarMetric] = [.cpu, .memory]
+    /// Warn when these are exceeded. Nil disables the alert.
+    var alertCPUPercent: Double? = nil
+    var alertMemoryPercent: Double? = 92
+    var alertBatteryTemperature: Double? = 38
+
     /// Set once the main window has been shown, so a first launch opens it
     /// and later ones stay out of the way in the menu bar.
     var hasShownWindow = false

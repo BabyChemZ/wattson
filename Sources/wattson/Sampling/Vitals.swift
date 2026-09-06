@@ -20,6 +20,9 @@ struct SystemVitals: Equatable {
     var battery: BatteryInfo?
     var gpu: GPUInfo?
     var memoryPressure: MemoryPressure = .normal
+    var thermal: ThermalState = .nominal
+    var sensors = SensorReadings()
+    var uptimeSeconds: TimeInterval = 0
     var disk = DiskInfo()
     var network = NetworkThroughput()
 

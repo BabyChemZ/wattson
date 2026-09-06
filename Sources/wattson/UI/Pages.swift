@@ -25,6 +25,11 @@ struct OverviewPage: View {
                          tint: model.pressureTint,
                          fraction: model.state.vitals.memUsedFraction)
                 batteryTile
+                StatTile(label: L("CPU temp", "CPU 温度"),
+                         value: model.temperatureText(model.state.vitals.sensors.cpu),
+                         caption: model.state.vitals.thermal.label,
+                         tint: model.coreTemperatureTint(model.state.vitals.sensors.cpu),
+                         fraction: (model.state.vitals.sensors.cpu ?? 0) / 100)
                 StatTile(label: L("GPU", "GPU"),
                          value: model.state.vitals.gpu
                             .map { String(format: "%.0f%%", $0.deviceUtilization) } ?? "—",
@@ -96,7 +101,15 @@ struct CPUPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Card {
-                HStack(spacing: 20) {
+                HStack(spacing: 26) {
+                    Donut(segments: [
+                        .init(value: model.state.vitals.sensors.cpu ?? 0, color: .alertTint),
+                        .init(value: max(0, 100 - (model.state.vitals.sensors.cpu ?? 0)),
+                              color: .idleTint),
+                    ], centerText: model.temperatureText(model.state.vitals.sensors.cpu),
+                       centerCaption: L("temp", "温度"), lineWidth: 7)
+                    .frame(width: 68, height: 68)
+
                     Donut(segments: [
                         .init(value: model.state.vitals.cpuSystem, color: .systemTint),
                         .init(value: model.state.vitals.cpuUser, color: .cpuTint),
@@ -105,27 +118,23 @@ struct CPUPage: View {
                        centerCaption: L("busy", "占用"))
                     .frame(width: 96, height: 96)
 
-                    VStack(alignment: .leading, spacing: 10) {
+                    Donut(segments: [
+                        .init(value: min(model.state.vitals.loadAverage.first ?? 0,
+                                         Double(max(model.state.cores.count, 1))),
+                              color: .memoryTint),
+                        .init(value: max(0, Double(max(model.state.cores.count, 1))
+                                         - (model.state.vitals.loadAverage.first ?? 0)),
+                              color: .idleTint),
+                    ], centerText: model.loadText,
+                       centerCaption: L("load", "负载"), lineWidth: 7)
+                    .frame(width: 68, height: 68)
+
+                    VStack(alignment: .leading, spacing: 7) {
                         Text(model.chipDescription)
                             .font(.ui(14, .medium)).foregroundStyle(Color.ink)
-                        HStack(spacing: 16) {
-                            LegendDot(color: .systemTint, label: L("System", "系统"),
-                                      value: String(format: "%.0f%%",
-                                                    model.state.vitals.cpuSystem))
-                            LegendDot(color: .cpuTint, label: L("User", "用户"),
-                                      value: String(format: "%.0f%%",
-                                                    model.state.vitals.cpuUser))
-                            LegendDot(color: .idleTint, label: L("Idle", "闲置"),
-                                      value: String(format: "%.0f%%",
-                                                    model.state.vitals.cpuIdle))
-                        }
-                        if model.state.vitals.loadAverage.count >= 3 {
-                            Text(L("Load average  \(model.loadAverageText)",
-                                   "平均负载  \(model.loadAverageText)"))
-                                .font(.figure(11)).foregroundStyle(Color.inkMuted)
-                        }
+                        DetailGrid(rows: model.cpuDetailRows())
                     }
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
             }
 
@@ -134,6 +143,10 @@ struct CPUPage: View {
                     .frame(height: 130)
                 Text(model.trailSpanText)
                     .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
+            }
+
+            Card(title: L("Load average", "平均负载")) {
+                DetailGrid(rows: model.loadAverageRows())
             }
 
             if !model.state.cores.isEmpty {
@@ -430,13 +443,6 @@ struct NetworkPage: View {
                          caption: L("total \(formatBytes(model.state.vitals.network.totalBytesOut))",
                                     "累计 \(formatBytes(model.state.vitals.network.totalBytesOut))"),
                          tint: .healthyTint, fraction: nil)
-                StatTile(label: L("Disk", "磁盘"),
-                         value: String(format: "%.0f%%",
-                                       model.state.vitals.disk.usedFraction * 100),
-                         caption: L("\(formatBytes(model.state.vitals.disk.freeBytes)) free",
-                                    "剩余 \(formatBytes(model.state.vitals.disk.freeBytes))"),
-                         tint: .memoryTint,
-                         fraction: model.state.vitals.disk.usedFraction)
             }
 
             Card(title: L("Busiest connections", "网络占用最高")) {
@@ -505,6 +511,118 @@ struct LearningCard: View {
                 Text(L("Until a program has a baseline it is watched but never acted on.",
                        "在建立基线之前，程序只被观察，绝不会被处置。"))
                     .font(.ui(10)).foregroundStyle(Color.inkFaint)
+            }
+        }
+    }
+}
+
+// MARK: - Sensors
+
+struct SensorsPage: View {
+    @ObservedObject var model: AppModel
+    @State private var showAll = false
+
+    private var sensors: SensorReadings { model.state.vitals.sensors }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                StatTile(label: L("CPU", "CPU"),
+                         value: model.temperatureText(sensors.cpu),
+                         caption: L("hottest core", "最热核心"),
+                         tint: model.coreTemperatureTint(sensors.cpu),
+                         fraction: (sensors.cpu ?? 0) / 100)
+                StatTile(label: L("GPU", "GPU"),
+                         value: model.temperatureText(sensors.gpu),
+                         caption: L("graphics", "图形"),
+                         tint: model.coreTemperatureTint(sensors.gpu),
+                         fraction: (sensors.gpu ?? 0) / 100)
+                StatTile(label: L("Enclosure", "机身"),
+                         value: model.temperatureText(sensors.skin),
+                         caption: L("skin and ambient", "表面与环境"),
+                         tint: model.coreTemperatureTint(sensors.skin),
+                         fraction: (sensors.skin ?? 0) / 100)
+                StatTile(label: L("Thermal state", "热状态"),
+                         value: model.state.vitals.thermal.label,
+                         caption: L("macOS's own verdict", "系统自身判定"),
+                         tint: model.thermalTint, fraction: nil)
+            }
+
+            Card(title: L("By cluster", "分组")) {
+                DetailGrid(rows: model.sensorGroupRows())
+                if sensors.fanRPM.isEmpty {
+                    Text(L("This machine has no fans — it sheds heat passively, which makes a long hot stretch matter more, not less.",
+                           "这台机器没有风扇，靠被动散热 —— 这让长时间高温更值得在意，而不是更不值得。"))
+                        .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(Array(sensors.fanRPM.enumerated()), id: \.offset) { index, rpm in
+                        LabelledBar(label: L("Fan \(index + 1)", "风扇 \(index + 1)"),
+                                    value: String(format: "%.0f rpm", rpm),
+                                    fraction: rpm / 6000, tint: .coreTint)
+                    }
+                }
+            }
+
+            Card(title: L("All sensors", "全部传感器"),
+                 trailing: AnyView(
+                    Button(showAll ? L("Show less", "收起")
+                                   : L("Show all \(sensors.all.count)",
+                                       "展开全部 \(sensors.all.count) 个")) {
+                        showAll.toggle()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.ui(10.5)).foregroundStyle(Color.accent))) {
+                let sorted = sensors.all.sorted { $0.value > $1.value }
+                let shown = showAll ? sorted : Array(sorted.prefix(8))
+                DetailGrid(rows: shown.map {
+                    ($0.key, String(format: "%.1f °C", $0.value))
+                })
+                if sensors.all.isEmpty {
+                    Text(L("Reading sensors…", "正在读取传感器…"))
+                        .font(.ui(11)).foregroundStyle(Color.inkFaint)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Disk
+
+struct DiskPage: View {
+    @ObservedObject var model: AppModel
+
+    private var disk: DiskInfo { model.state.vitals.disk }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                StatTile(label: L("Used", "已用"),
+                         value: String(format: "%.0f%%", disk.usedFraction * 100),
+                         caption: L("\(formatBytes(disk.freeBytes)) free",
+                                    "剩余 \(formatBytes(disk.freeBytes))"),
+                         tint: disk.usedFraction > 0.9 ? .alertTint : .memoryTint,
+                         fraction: disk.usedFraction)
+                StatTile(label: L("Read", "读取"),
+                         value: formatRate(disk.readBytesPerSecond),
+                         caption: L("total \(formatBytes(disk.totalRead))",
+                                    "累计 \(formatBytes(disk.totalRead))"),
+                         tint: .cpuTint, fraction: nil)
+                StatTile(label: L("Write", "写入"),
+                         value: formatRate(disk.writeBytesPerSecond),
+                         caption: L("total \(formatBytes(disk.totalWritten))",
+                                    "累计 \(formatBytes(disk.totalWritten))"),
+                         tint: .swapTint, fraction: nil)
+            }
+
+            Card(title: L("Capacity", "容量")) {
+                DetailGrid(rows: [
+                    (L("Total", "总容量"), formatBytes(disk.totalBytes)),
+                    (L("Used", "已用"), formatBytes(disk.usedBytes)),
+                    (L("Free", "可用"), formatBytes(disk.freeBytes)),
+                    (L("Lifetime read", "累计读取"), formatBytes(disk.totalRead)),
+                    (L("Lifetime written", "累计写入"), formatBytes(disk.totalWritten)),
+                ])
             }
         }
     }

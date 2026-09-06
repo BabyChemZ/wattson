@@ -18,9 +18,13 @@ final class VitalsSampler {
     private static let slowEvery = 5
     private var cachedBattery: BatteryInfo?
     private var cachedGPU: GPUInfo?
+    private var cachedSensors = SensorReadings()
+    private let smc = SMC()
 
     private var previousNetwork: (inBytes: UInt64, outBytes: UInt64)?
     private var previousNetworkAt: Date?
+    private var previousDisk: (read: UInt64, written: UInt64)?
+    private var previousDiskAt: Date?
     private let physicalMemory: UInt64 = {
         var value: UInt64 = 0
         var size = MemoryLayout<UInt64>.size
@@ -39,6 +43,7 @@ final class VitalsSampler {
         // one now — otherwise the opening sample reports zero busy and no cores.
         _ = cores.sample()
         _ = SystemProbe.networkCounters()
+        _ = SystemProbe.diskCounters()
     }
 
     func sample() -> (vitals: SystemVitals, cores: [CoreLoad]) {
@@ -58,12 +63,20 @@ final class VitalsSampler {
         if slowCounter % Self.slowEvery == 0 || cachedBattery == nil {
             cachedBattery = BatteryProbe.read()
             cachedGPU = GPUProbe.read()
+            if let smc {
+                cachedSensors = SensorReadings.from(smc.temperatures(full: false),
+                                                    fans: smc.fanSpeeds())
+            }
         }
         slowCounter &+= 1
         vitals.battery = cachedBattery
         vitals.gpu = cachedGPU
+        vitals.sensors = cachedSensors
         vitals.memoryPressure = SystemProbe.memoryPressure()
+        vitals.thermal = SystemProbe.thermalState()
+        vitals.uptimeSeconds = SystemProbe.uptime()
         vitals.disk = SystemProbe.disk()
+        applyDiskThroughput(to: &vitals)
         applyNetwork(to: &vitals)
 
         return (vitals, coreLoads)
@@ -100,6 +113,20 @@ final class VitalsSampler {
         if sysctlbyname("vm.swapusage", &swap, &swapSize, nil, 0) == 0 {
             vitals.swapUsedBytes = swap.xsu_used
         }
+    }
+
+    private func applyDiskThroughput(to vitals: inout SystemVitals) {
+        let counters = SystemProbe.diskCounters()
+        let now = Date()
+        defer { previousDisk = counters; previousDiskAt = now }
+        vitals.disk.totalRead = counters.read
+        vitals.disk.totalWritten = counters.written
+        guard let previous = previousDisk, let previousAt = previousDiskAt else { return }
+        let elapsed = max(now.timeIntervalSince(previousAt), 0.001)
+        vitals.disk.readBytesPerSecond =
+            Double(monotonicDelta(counters.read, previous.read)) / elapsed
+        vitals.disk.writeBytesPerSecond =
+            Double(monotonicDelta(counters.written, previous.written)) / elapsed
     }
 
     private func loadAverage() -> [Double] {

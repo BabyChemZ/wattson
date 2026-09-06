@@ -85,6 +85,101 @@ final class AppModel: ObservableObject {
         state.cores.filter { $0.index >= state.efficiencyCoreCount }
     }
 
+    /// Mean utilisation of each cluster — the figure that says which kind of
+    /// core the work is actually landing on.
+    func clusterLoad(_ cores: [CoreLoad]) -> Double {
+        guard !cores.isEmpty else { return 0 }
+        return cores.reduce(0) { $0 + $1.busy } / Double(cores.count) * 100
+    }
+
+    var uptimeDescription: String {
+        let seconds = Int(state.vitals.uptimeSeconds)
+        let days = seconds / 86400
+        let hours = (seconds % 86400) / 3600
+        let minutes = (seconds % 3600) / 60
+        if days > 0 { return L("\(days)d \(hours)h", "\(days) 天 \(hours) 小时") }
+        if hours > 0 { return L("\(hours)h \(minutes)m", "\(hours) 小时 \(minutes) 分") }
+        return L("\(minutes)m", "\(minutes) 分钟")
+    }
+
+    /// The breakdown Stats shows beside the CPU dial.
+    func cpuDetailRows() -> [(String, String)] {
+        let v = state.vitals
+        var rows: [(String, String)] = [
+            (L("System", "系统"), String(format: "%.0f%%", v.cpuSystem)),
+            (L("User", "用户"), String(format: "%.0f%%", v.cpuUser)),
+            (L("Idle", "闲置"), String(format: "%.0f%%", v.cpuIdle)),
+        ]
+        if !efficiencyCores.isEmpty {
+            rows.append((L("Efficiency cores", "能效核心"),
+                         String(format: "%.0f%%", clusterLoad(efficiencyCores))))
+        }
+        if !performanceCores.isEmpty {
+            rows.append((L("\(state.performanceLevelName) cores",
+                           "\(state.performanceLevelName) 核心"),
+                         String(format: "%.0f%%", clusterLoad(performanceCores))))
+        }
+        rows.append((L("Uptime", "启动时间"), uptimeDescription))
+        rows.append((L("Threads", "线程"), "\(state.vitals.threadCount)"))
+        return rows
+    }
+
+    func loadAverageRows() -> [(String, String)] {
+        let averages = state.vitals.loadAverage
+        let labels = [L("1 minute", "1 分钟"), L("5 minutes", "5 分钟"),
+                      L("15 minutes", "15 分钟")]
+        return zip(labels, averages).map { ($0, String(format: "%.2f", $1)) }
+    }
+
+    func sensorGroupRows() -> [(String, String)] {
+        let s = state.vitals.sensors
+        var rows: [(String, String)] = []
+        if let v = s.performanceCore {
+            rows.append((L("\(state.performanceLevelName) cores",
+                           "\(state.performanceLevelName) 核心"),
+                         String(format: "%.1f °C", v)))
+        }
+        if let v = s.efficiencyCore {
+            rows.append((L("Efficiency cores", "能效核心"), String(format: "%.1f °C", v)))
+        }
+        if let v = s.gpu { rows.append((L("GPU", "GPU"), String(format: "%.1f °C", v))) }
+        if let v = s.skin {
+            rows.append((L("Enclosure", "机身"), String(format: "%.1f °C", v)))
+        }
+        if let v = s.powerDelivery {
+            rows.append((L("Power delivery", "供电"), String(format: "%.1f °C", v)))
+        }
+        if let b = state.vitals.battery {
+            rows.append((L("Battery", "电池"), String(format: "%.1f °C", b.temperature)))
+        }
+        if let hottest = s.hottest {
+            rows.append((L("Hottest sensor", "最热传感器"),
+                         String(format: "%@  %.1f °C", hottest.name, hottest.value)))
+        }
+        return rows
+    }
+
+    /// Silicon runs hotter than a battery does, so it gets its own bands.
+    func coreTemperatureTint(_ celsius: Double?) -> Color {
+        guard let celsius else { return .inkFaint }
+        if celsius >= 95 { return .dangerTint }
+        if celsius >= 80 { return .alertTint }
+        return .healthyTint
+    }
+
+    var thermalTint: Color {
+        switch state.vitals.thermal {
+        case .nominal:  return .healthyTint
+        case .fair:     return .coreTint
+        case .serious:  return .alertTint
+        case .critical: return .dangerTint
+        }
+    }
+
+    func temperatureText(_ value: Double?) -> String {
+        value.map { String(format: "%.0f°C", $0) } ?? "—"
+    }
+
     func detail(for row: ProcessRow) -> ProgramDetail? {
         engine.detail(for: row.command, pid: row.pid)
     }
@@ -339,6 +434,17 @@ final class AppModel: ObservableObject {
         gpu.allocatedMemory = 4_278_190_080
         gpu.name = "Apple M5"
         vitals.gpu = gpu
+        vitals.uptimeSeconds = 8 * 86400 + 11 * 3600
+        vitals.thermal = .fair
+        vitals.disk.readBytesPerSecond = 2_400_000
+        vitals.disk.writeBytesPerSecond = 810_000
+        vitals.disk.totalRead = 501_775_073_280
+        vitals.disk.totalWritten = 340_424_388_608
+        vitals.sensors = SensorReadings.from(
+            ["Tp0X": 56.1, "Tp0O": 55.3, "Tp0C": 55.3, "Tp00": 54.4,
+             "Te05": 46.8, "Te0L": 45.9, "Tg0D": 47.2, "Tg0L": 46.1,
+             "Ts0O": 50.6, "Ta00": 49.8, "TVD0": 60.6, "TCMb": 59.2],
+            fans: [])
 
         let coreLoads = [0.42, 0.38, 0.31, 0.27, 0.19, 0.22, 0.66, 0.58, 0.12, 0.09]
         var state = EngineState()

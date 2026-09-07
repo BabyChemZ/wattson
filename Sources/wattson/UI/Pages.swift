@@ -25,7 +25,10 @@ struct OverviewPage: View {
                 StatTile(label: L("Memory", "内存"),
                          value: String(format: "%.0f%%",
                                        model.state.vitals.memUsedFraction * 100),
-                         caption: model.state.vitals.memoryPressure.label,
+                         caption: model.state.vitals.isSwapping
+                            ? L("+\(formatBytes(model.state.vitals.swapUsedBytes)) on disk",
+                                "另有 \(formatBytes(model.state.vitals.swapUsedBytes)) 在磁盘")
+                            : model.state.vitals.memoryPressure.label,
                          tint: model.pressureTint,
                          fraction: model.state.vitals.memUsedFraction)
                 batteryTile
@@ -396,6 +399,13 @@ struct MemoryPage: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 7).padding(.vertical, 2)
                                 .background(Capsule().fill(model.pressureTint))
+                        }
+
+                        if vitals.isSwapping {
+                            Text(L("\(formatBytes(vitals.swapUsedBytes)) held on disk — usage would be \(Int(vitals.memEffectiveFraction * 100))% if it were resident",
+                                   "另有 \(formatBytes(vitals.swapUsedBytes)) 压在磁盘上 —— 若全部驻留，占用为 \(Int(vitals.memEffectiveFraction * 100))%"))
+                                .font(.ui(10.5)).foregroundStyle(Color.swapTint)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         VStack(alignment: .leading, spacing: 5) {
                             LegendDot(color: .memoryTint, label: L("App", "应用"),

@@ -502,7 +502,9 @@ final class AppModel: ObservableObject {
         vitals.memUsedBytes = 16_600_000_000
         vitals.memWiredBytes = 3_090_000_000
         vitals.memCompressedBytes = 6_010_000_000
-        vitals.memUnusedBytes = 8_180_000_000
+        vitals.memUnusedBytes = 3_760_000_000
+        vitals.memReclaimableBytes = 4_720_000_000
+        vitals.swapUsedBytes = 5_000_000_000
         vitals.loadAverage = [1.48, 1.67, 1.88]
         vitals.processCount = 704
         vitals.threadCount = 4293

@@ -69,6 +69,12 @@ final class Engine: @unchecked Sendable {
     private var inferenceStartSwap: UInt64 = 0
     private var lastRuntimeMemory: UInt64 = 0
     private var raisedWarnings: Set<String> = []
+    /// Ticks in a row without seeing the runtime. The process table is capped
+    /// at the top 50 by CPU, so a runtime that pauses between requests drops
+    /// out of view briefly — ending the session on the first miss chopped one
+    /// real run into several empty ones.
+    private var inferenceMissedTicks = 0
+    private static let inferenceGraceTicks = 3
     private var agentBooks = AgentBookkeeping()
     private var reportedOrphans: Set<Int32> = []
     private var lastVitalsAt: Date?
@@ -591,9 +597,12 @@ final class Engine: @unchecked Sendable {
         let runtime = deltas.first { HeavyWorkload.matches($0.command, pid: $0.pid) }
 
         guard let runtime else {
-            finishInference()
+            guard currentInference != nil else { return }
+            inferenceMissedTicks += 1
+            if inferenceMissedTicks >= Self.inferenceGraceTicks { finishInference() }
             return
         }
+        inferenceMissedTicks = 0
 
         if currentInference == nil {
             beginInference(runtime: runtime, rows: rows)
@@ -713,7 +722,12 @@ final class Engine: @unchecked Sendable {
 
         session.endedAt = Date()
         currentInference = nil
-        if session.duration > 15 { inferenceLog.record(session) }
+        inferenceMissedTicks = 0
+        // A session with nothing measured in it is a sampling artefact, not a
+        // run worth keeping.
+        if session.duration > 15, session.peakProcessMemory > 0 {
+            inferenceLog.record(session)
+        }
 
         log.write(String(format: "inference ended after %.0fs — generating %.1f min, "
                          + "peak %.0f°C, throttled %.1f min, swap +%@",

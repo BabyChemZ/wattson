@@ -10,7 +10,8 @@ OUT="${1:-docs}"
 CONTROL="${TMPDIR:-/tmp}/wattson-capture.json"
 PAGES=(overview cpu gpu memory sensors battery disk network inference processes history away events)
 
-command -v ./scripts/.winid >/dev/null 2>&1 || swiftc -O scripts/winid.swift -o scripts/.winid
+[ -x scripts/.winid ] || swiftc -O scripts/winid.swift -o scripts/.winid
+[ -x scripts/.parkmouse ] || swiftc -O scripts/parkmouse.swift -o scripts/.parkmouse
 
 echo "==> building"
 ./scripts/build-app.sh >/dev/null
@@ -41,6 +42,7 @@ for variant in "dark en" "light zh"; do
     for page in "${PAGES[@]}"; do
         printf '{"page":"%s","appearance":"%s","language":"%s"}\n' \
             "$page" "$APPEARANCE" "$LANGUAGE" > "$CONTROL"
+        ./scripts/.parkmouse
         sleep 1.2
         caffeinate -u -t 1 &
         screencapture -x -o -l "$ID" "$OUT/$page-$APPEARANCE-$LANGUAGE.png"

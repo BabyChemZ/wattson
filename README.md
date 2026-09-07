@@ -337,6 +337,12 @@ wattson watch                  # run the watchdog in the foreground
   go weeks with nothing flagged. That's the good outcome, but it means the
   watchdog is insurance; day to day, the value is in the monitoring and the
   inference and agent work.
+- **A long enough problem becomes the baseline.** Behaviour is learned from
+  what a program actually does, so one that spends a large share of its life
+  wedged will have "wedged" fitted as one of its normal states. Clusters
+  holding under 15% of the samples are refused that status, and the 90-day
+  daily history dilutes a bad afternoon — but a program that has never been
+  observed behaving well cannot be judged against behaving well.
 - **Tested on one machine** — M5 MacBook Air, 24 GB, macOS 26. Intel is
   untested and parts won't work there.
 - **No Developer ID signature or notarization** — downloaded previews need manual approval on first use.

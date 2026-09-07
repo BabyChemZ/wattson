@@ -337,6 +337,21 @@ wattson watch                  # run the watchdog in the foreground
   go weeks with nothing flagged. That's the good outcome, but it means the
   watchdog is insurance; day to day, the value is in the monitoring and the
   inference and agent work.
+- **It is not a general anomaly detector.** The verdict needs at least two
+  independent pieces of evidence, and a rise in CPU alone is never enough —
+  that is what a build, an export and an index do every day. What it catches
+  reliably is a long-running program with a recognisable I/O signature that
+  suddenly stops doing its job while still burning a core: a proxy whose
+  throughput collapses scores network stall plus CPU deviation and clears the
+  bar comfortably. A purely computational background task has no signature to
+  collapse and scores 0.35 against a threshold of 0.5 — measured, not
+  estimated. Also outside its reach: memory leaks (memory is not part of the
+  verdict at all), per-process GPU runaway (macOS does not publish the
+  figures), traffic that surges rather than stalls, slow month-over-month
+  degradation with no step change, and programs whose normal is wide enough to
+  hide in — browsers and IDEs among them. The threshold could be lowered, but
+  every false alarm teaches someone to ignore the next one, and a watchdog
+  nobody believes is worth less than none.
 - **A long enough problem becomes the baseline.** Behaviour is learned from
   what a program actually does, so one that spends a large share of its life
   wedged will have "wedged" fitted as one of its normal states. Clusters

@@ -10,7 +10,11 @@ enum Stage: String {
 
 struct Incident {
     let command: String
-    let identity: ProcessIdentity
+    /// Absent for processes owned by another user: `proc_pidinfo` refuses to
+    /// answer for them, so there is no way to prove later that a pid still
+    /// refers to the same program. The incident is still tracked and still
+    /// reported — only the intervention is withheld.
+    let identity: ProcessIdentity?
     let startedAt: Date
     var anomalousTicks: Int
     var stage: Stage
@@ -1067,9 +1071,17 @@ final class Engine: @unchecked Sendable {
     // MARK: - Escalation
 
     private func handleAnomaly(_ verdict: Verdict, delta: ProcDelta) {
-        guard let identity = delta.identity else { return }
+        // A missing identity used to end this function on its first line. Root
+        // services do not answer proc_pidinfo, so a root-owned proxy pinning a
+        // core was judged anomalous on every tick for nine minutes and dropped
+        // here in silence — nothing acted on, and nothing in the log to say
+        // why. Those are precisely the programs worth watching: proxies, VPN
+        // daemons and system services mostly run as root. The incident is now
+        // tracked and reported like any other; only the intervention needs an
+        // identity, because acting on a bare pid is how a watchdog suspends
+        // the wrong process after the number is reused.
         var incident = incidents[delta.pid] ?? Incident(
-            command: delta.command, identity: identity, startedAt: Date(),
+            command: delta.command, identity: delta.identity, startedAt: Date(),
             anomalousTicks: 0, stage: .watching, stageEnteredAt: Date())
         incident.anomalousTicks += 1
 
@@ -1083,6 +1095,17 @@ final class Engine: @unchecked Sendable {
                 // process is doing, and the evidence would be gone.
                 incident.stackFile = actions.captureStack(pid: delta.pid,
                                                           command: delta.command)
+                guard let identity = incident.identity else {
+                    // Nothing safe to act on, but the reader still needs to
+                    // know, and needs to know why nothing happened.
+                    incident.stage = .exhausted
+                    incident.stageEnteredAt = Date()
+                    report(verdict, delta: delta, incident: incident, action: nil,
+                           note: L("owned by another user — Wattson cannot act on it; quit it yourself or run it as your own user",
+                                   "属于其他用户，Wattson 无法处置 —— 请自行结束，或改用你自己的账户运行"))
+                    incidents[delta.pid] = incident
+                    return
+                }
                 let ok = priorities.acquire(identity, reason: .anomaly, config: config)
                 incident.stage = ok ? .demoted : .exhausted
                 incident.stageEnteredAt = Date()
@@ -1108,8 +1131,10 @@ final class Engine: @unchecked Sendable {
 
     private func resolveIfNeeded(pid: Int32, command: String) {
         guard let incident = incidents.removeValue(forKey: pid) else { return }
-        if priorities.leases[incident.identity] != nil {
-            let restored = priorities.release(incident.identity, reason: .anomaly)
+        // Only an incident that could be acted on holds a lease to release.
+        guard let identity = incident.identity else { return }
+        if priorities.leases[identity] != nil {
+            let restored = priorities.release(identity, reason: .anomaly)
             let minutes = Int(Date().timeIntervalSince(incident.startedAt) / 60)
             log.write("\(command) [\(pid)] settled after \(minutes)m — "
                       + (restored ? "anomaly priority request released" : "priority restore pending; will retry"))
@@ -1120,8 +1145,9 @@ final class Engine: @unchecked Sendable {
         // Missing from top-N is not proof of exit or recovery. Withdraw our
         // intervention when evidence disappears; restoration checks identity.
         for pid in Array(incidents.keys) where !observed.contains(pid) {
-            if let incident = incidents.removeValue(forKey: pid) {
-                _ = priorities.release(incident.identity, reason: .anomaly)
+            if let incident = incidents.removeValue(forKey: pid),
+               let identity = incident.identity {
+                _ = priorities.release(identity, reason: .anomaly)
             }
         }
         for pid in burstStarted.keys where !observed.contains(pid) {

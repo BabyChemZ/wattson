@@ -233,7 +233,7 @@ Python（真实运算）   99.9              0   8.22
 
 **当前为预览版，安装包面向 Apple Silicon（arm64）。编译最低目标为 macOS 13；实际验证目前仅覆盖 macOS 26 上的一台 M5。**
 
-仓库公开源码不等于已经发布安装包；请以 Releases 页实际存在的附件为准。维护者可运行 `./scripts/package-release.sh` 生成 `dist/Wattson-0.1.1-arm64-preview.zip` 和 SHA-256 校验文件。
+仓库公开源码不等于已经发布安装包；请以 Releases 页实际存在的附件为准。维护者可运行 `./scripts/package-release.sh` 生成 `dist/Wattson-0.1.2-arm64-preview.zip` 和 SHA-256 校验文件。
 
 没有付费开发者签名和公证也可以分发使用。解压后把 `Wattson.app` 拖到「应用程序」并尝试打开；若提示无法验证开发者，到「系统设置 → 隐私与安全 → 仍要打开」确认。这是 Apple 提供的单个应用例外流程；受组织管理的 Mac 可能限制此操作。[Apple 官方说明](https://support.apple.com/zh-cn/102445)
 

@@ -255,7 +255,7 @@ func runTop() {
             note = "protected (\(reason.rawValue))"
         } else {
             switch verdict.judgment {
-            case .anomalous: note = "ANOMALOUS — " + verdict.reasons.joined(separator: "; ")
+            case .anomalous: note = "ANOMALOUS — " + verdict.reasons.map(\.text).joined(separator: "; ")
             case .learning:  note = "learning (\(baseline?.cpuPercent.count ?? 0)/\(config.minimumSamples))"
             case .normal:    note = ""
             }

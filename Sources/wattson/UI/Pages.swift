@@ -867,7 +867,7 @@ struct MiniEvent: View {
             Circle().fill(Color.alertTint).frame(width: 5, height: 5).padding(.top, 5)
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.command).font(.ui(11.5, .medium)).foregroundStyle(Color.ink)
-                Text(event.reasons.first ?? event.headline)
+                Text((event.reasons.first ?? event.headline).text)
                     .font(.ui(10.5)).foregroundStyle(Color.inkMuted)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }

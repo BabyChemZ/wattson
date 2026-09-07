@@ -46,8 +46,8 @@ struct Event: Identifiable, Equatable, Codable {
     let id = UUID()
     let at: Date
     let command: String
-    let headline: String
-    let reasons: [String]
+    let headline: Bilingual
+    let reasons: [Bilingual]
     let stage: String
     let observedOnly: Bool
 }

@@ -16,7 +16,7 @@ struct Verdict {
     let score: Double
     /// Plain-language evidence, for the notification and the log. A verdict you
     /// can't explain is a verdict you can't trust.
-    let reasons: [String]
+    let reasons: [Bilingual]
     let cpuPercent: Double
 }
 
@@ -44,12 +44,12 @@ struct VerdictEngine {
         guard let baseline, baseline.cpuPercent.count >= config.minimumSamples else {
             return Verdict(pid: d.pid, command: d.command, judgment: .learning,
                            score: 0,
-                           reasons: [L("still learning this program's habits",
+                           reasons: [Bilingual("still learning this program's habits",
                                        "仍在学习这个程序的习惯")],
                            cpuPercent: d.cpuPercent)
         }
 
-        var reasons: [String] = []
+        var reasons: [Bilingual] = []
         var score = 0.0
 
         // --- Gate: is this level of CPU unusual *for this program*? ---
@@ -94,14 +94,16 @@ struct VerdictEngine {
                     if !seen.contains(text) { seen.append(text) }
                 }
                 let states = seen.joined(separator: " / ")
-                reasons.append(String(format: L("CPU %.0f%% — matches none of its usual states (%@)",
-                                                "CPU %.0f%% —— 不属于它已知的任何状态（%@）"),
-                                      d.cpuPercent, states as NSString))
+                reasons.append(Bilingual(
+                    String(format: "CPU %.0f%% — matches none of its usual states (%@)",
+                           d.cpuPercent, states as NSString),
+                    String(format: "CPU %.0f%% —— 不属于它已知的任何状态（%@）",
+                           d.cpuPercent, states as NSString)))
             } else if let center = baseline.cpuModes.nearestCenter(to: d.cpuPercent)
                         ?? fallback.median {
-                reasons.append(String(format: L("CPU %.0f%% vs its usual %.1f%%",
-                                                "CPU %.0f%%，而它的常态是 %.1f%%"),
-                                      d.cpuPercent, center))
+                reasons.append(Bilingual(
+                    String(format: "CPU %.0f%% vs its usual %.1f%%", d.cpuPercent, center),
+                    String(format: "CPU %.0f%%，而它的常态是 %.1f%%", d.cpuPercent, center)))
             }
             score += 0.35
 
@@ -124,10 +126,11 @@ struct VerdictEngine {
         // whose CPU is naturally spiky has a wide spread and hides inside it,
         // but it still has a longest-episode-ever, and exceeding that is new.
         if unusualDuration, let burst = currentBurstSeconds, let longest = baseline.longestBurstEver {
-            reasons.append(String(
-                format: L("hot for %.0f min — its longest episode on record was %.0f min",
-                          "已持续 %.0f 分钟 —— 它有记录以来最长的一次只有 %.0f 分钟"),
-                burst / 60, longest / 60))
+            reasons.append(Bilingual(
+                String(format: "hot for %.0f min — its longest episode on record was %.0f min",
+                       burst / 60, longest / 60),
+                String(format: "已持续 %.0f 分钟 —— 它有记录以来最长的一次只有 %.0f 分钟",
+                       burst / 60, longest / 60)))
             score += unusualCPU ? 0.25 : 0.55
         }
 
@@ -138,9 +141,10 @@ struct VerdictEngine {
            usualNet > config.meaningfulNetBytesPerCPUSecond,
            let nowNet = d.netBytesPerCPUSecond,
            nowNet < usualNet * config.stallRatio {
-            reasons.append(String(format: L("network throughput collapsed to %.0f%% of normal",
-                                            "网络吞吐跌到正常水平的 %.0f%%"),
-                                  usualNet > 0 ? (nowNet / usualNet) * 100 : 0))
+            let ratio = usualNet > 0 ? (nowNet / usualNet) * 100 : 0
+            reasons.append(Bilingual(
+                String(format: "network throughput collapsed to %.0f%% of normal", ratio),
+                String(format: "网络吞吐跌到正常水平的 %.0f%%", ratio)))
             score += 0.30
         }
 
@@ -150,8 +154,8 @@ struct VerdictEngine {
            usualSys > config.meaningfulSyscallsPerCPUSecond,
            let nowSys = d.syscallsPerCPUSecond,
            nowSys < usualSys * config.stallRatio {
-            reasons.append(L("stopped making syscalls while pegging the CPU",
-                             "占满 CPU 却不再发起系统调用"))
+            reasons.append(Bilingual("stopped making syscalls while pegging the CPU",
+                                     "占满 CPU 却不再发起系统调用"))
             score += 0.20
         }
 
@@ -162,9 +166,9 @@ struct VerdictEngine {
         if let ipc = d.ipc, let ipcDeviation = baseline.ipc.deviation(of: ipc),
            abs(ipcDeviation) > config.deviationThreshold,
            let usualIPC = baseline.ipc.median {
-            reasons.append(String(format: L("instructions-per-cycle %.2f vs usual %.2f",
-                                            "每周期指令数 %.2f，平时是 %.2f"),
-                                  ipc, usualIPC))
+            reasons.append(Bilingual(
+                String(format: "instructions-per-cycle %.2f vs usual %.2f", ipc, usualIPC),
+                String(format: "每周期指令数 %.2f，平时是 %.2f", ipc, usualIPC)))
             score += 0.10
         }
 
@@ -173,8 +177,9 @@ struct VerdictEngine {
         score -= context.crowdDiscount
 
         if context.userIsAway {
-            reasons.append(L("nobody at the keyboard for \(Int(context.idleSeconds / 60)) min",
-                             "已 \(Int(context.idleSeconds / 60)) 分钟无人操作"))
+            let idle = Int(context.idleSeconds / 60)
+            reasons.append(Bilingual("nobody at the keyboard for \(idle) min",
+                                     "已 \(idle) 分钟无人操作"))
         }
 
         return Verdict(pid: d.pid, command: d.command,

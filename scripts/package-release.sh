@@ -3,7 +3,7 @@
 # supplied Developer ID identity and an existing notarytool keychain profile.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${WATTSON_VERSION:-0.1.1}"
+VERSION="${WATTSON_VERSION:-0.1.2}"
 PROFILE="${WATTSON_NOTARY_PROFILE:-}"
 if [[ -n "$PROFILE" && "${WATTSON_SIGNING_IDENTITY:--}" == - ]]; then
     echo "Notarization requires WATTSON_SIGNING_IDENTITY (Developer ID Application)." >&2

@@ -23,10 +23,12 @@ struct HarmWatch {
         case hot
         case pegged
 
-        var headline: String {
+        var headline: Bilingual {
             switch self {
-            case .hot:    return L("The machine has been running hot", "机器已经持续高温")
-            case .pegged: return L("The machine has been pinned", "机器已经被长时间占满")
+            case .hot:
+                return Bilingual("The machine has been running hot", "机器已经持续高温")
+            case .pegged:
+                return Bilingual("The machine has been pinned", "机器已经被长时间占满")
             }
         }
     }

@@ -49,3 +49,42 @@ func eventStamp(_ date: Date) -> String {
     formatter.timeStyle = .short
     return formatter.string(from: date)
 }
+
+
+/// A string kept in both languages, rendered at the moment it is displayed.
+///
+/// Verdict reasons used to be resolved with `L()` when the verdict was made
+/// and stored as one language's text. An event flagged before the interface
+/// was switched then kept its original wording forever, so a list of events
+/// spanning a language change read half in each. Storing both and choosing
+/// late costs a few bytes per event and makes the setting mean what it says.
+struct Bilingual: Codable, Equatable, Hashable {
+    let en: String
+    let zh: String
+
+    init(_ en: String, _ zh: String) {
+        self.en = en
+        self.zh = zh
+    }
+
+    /// A string that is the same in both languages — a program name, a number.
+    init(_ both: String) {
+        self.en = both
+        self.zh = both
+    }
+
+    var text: String { L(en, zh) }
+
+    /// Older event files stored plain strings; read them as language-neutral
+    /// rather than discarding the history.
+    init(from decoder: Decoder) throws {
+        if let single = try? decoder.singleValueContainer().decode(String.self) {
+            self.en = single
+            self.zh = single
+            return
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.en = try container.decode(String.self, forKey: .en)
+        self.zh = try container.decode(String.self, forKey: .zh)
+    }
+}

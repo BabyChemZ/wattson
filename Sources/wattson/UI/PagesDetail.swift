@@ -375,12 +375,12 @@ struct EventCard: View {
                     HStack(alignment: .top, spacing: 6) {
                         Circle().fill(Color.alertTint)
                             .frame(width: 4, height: 4).padding(.top, 5)
-                        Text(reason).font(.ui(11))
+                        Text(reason.text).font(.ui(11))
                             .foregroundStyle(Color.inkMuted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Text(event.headline)
+                Text(event.headline.text)
                     .font(.ui(11, .medium)).foregroundStyle(Color.accent)
             }
         }

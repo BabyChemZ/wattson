@@ -316,12 +316,12 @@ struct EventRowView: View {
                         .foregroundStyle(Color.inkFaint)
                 }
                 ForEach(event.reasons, id: \.self) { reason in
-                    Text(reason)
+                    Text(reason.text)
                         .font(.ui(10.5))
                         .foregroundStyle(Color.inkMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(event.headline)
+                Text(event.headline.text)
                     .font(.ui(10.5, .medium))
                     .foregroundStyle(Color.accent)
             }

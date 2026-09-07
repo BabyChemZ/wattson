@@ -702,7 +702,7 @@ final class Engine: @unchecked Sendable {
                                        netBytesPerSecond: delta.netBytesPerSecond ?? 0,
                                        recentCPU: trail,
                                        status: .anomalous(score: verdict.score),
-                                       detail: verdict.reasons.joined(separator: " · ")))
+                                       detail: verdict.reasons.map(\.text).joined(separator: " · ")))
             case .learning:
                 resolveIfNeeded(pid: delta.pid, command: delta.command)
                 store.observe(delta)
@@ -1123,8 +1123,8 @@ final class Engine: @unchecked Sendable {
                     incident.stage = .exhausted
                     incident.stageEnteredAt = Date()
                     report(verdict, delta: delta, incident: incident, action: nil,
-                           note: L("owned by another user — Wattson cannot act on it; quit it yourself or run it as your own user",
-                                   "属于其他用户，Wattson 无法处置 —— 请自行结束，或改用你自己的账户运行"))
+                           note: Bilingual("owned by another user — Wattson cannot act on it; quit it yourself or run it as your own user",
+                                           "属于其他用户，Wattson 无法处置 —— 请自行结束，或改用你自己的账户运行"))
                     incidents[delta.pid] = incident
                     return
                 }
@@ -1140,8 +1140,8 @@ final class Engine: @unchecked Sendable {
                 incident.stage = .exhausted
                 incident.stageEnteredAt = Date()
                 report(verdict, delta: delta, incident: incident, action: nil,
-                       note: L("still unusual after lowering priority — inspect before quitting",
-                               "降低优先级后仍异常 —— 请检查后决定是否结束进程"))
+                       note: Bilingual("still unusual after lowering priority — inspect before quitting",
+                                       "降低优先级后仍异常 —— 请检查后决定是否结束进程"))
             }
 
         case .exhausted:
@@ -1183,38 +1183,42 @@ final class Engine: @unchecked Sendable {
     // MARK: - Reporting
 
     private func report(_ verdict: Verdict, delta: ProcDelta, incident: Incident,
-                        action: Intervention?, note: String? = nil) {
-        var lines = verdict.reasons
-        if let note { lines.append(note) }
+                        action: Intervention?, note: Bilingual? = nil) {
+        var reasons = verdict.reasons
+        if let note { reasons.append(note) }
+        let lines = reasons.map(\.text)
 
-        let verb: String
+        let verb: Bilingual
         switch action {
-        case .backgroundPriority: verb = L("background priority requested", "已请求后台优先级")
-        case nil:                      verb = L("no action taken", "未做处置")
+        case .backgroundPriority:
+            verb = Bilingual("background priority requested", "已请求后台优先级")
+        case nil:
+            verb = Bilingual("no action taken", "未做处置")
         }
         let phrase = config.dryRun
-            ? L("would have \(verb)", "本会\(verb)（仅观察）") : verb
+            ? Bilingual("would have \(verb.en)", "本会\(verb.zh)（仅观察）")
+            : verb
 
         let headline = L("\(delta.command) is not behaving like itself",
                          "\(delta.command) 的行为异于往常")
-        var body = lines.joined(separator: "\n") + "\n→ \(phrase)"
+        var body = lines.joined(separator: "\n") + "\n→ \(phrase.text)"
         if let stack = incident.stackFile {
             body += "\n" + L("stack sample: ", "调用栈快照：") + stack.lastPathComponent
         }
 
         log.write("[\(incident.stage.rawValue)] \(delta.command) [\(delta.pid)] "
                 + "score \(String(format: "%.2f", verdict.score)) — "
-                + lines.joined(separator: "; ") + " — \(phrase)")
+                + reasons.map(\.en).joined(separator: "; ") + " — \(phrase.en)")
 
         if var session = currentAway {
             session.incidents.append(AwayIncident(
                 at: Date(), command: delta.command,
-                summary: lines.first ?? "", action: phrase))
+                summary: lines.first ?? "", action: phrase.text))
             currentAway = session
         }
 
         recentEvents.insert(Event(at: Date(), command: delta.command,
-                                  headline: phrase, reasons: lines,
+                                  headline: phrase, reasons: reasons,
                                   stage: incident.stage.rawValue,
                                   observedOnly: config.dryRun), at: 0)
         if recentEvents.count > 50 { recentEvents.removeLast() }
@@ -1228,13 +1232,13 @@ extension Engine {
     /// Report sustained harm. Phrased as a consequence rather than an anomaly:
     /// the reader's machine is hot, and this is what has been making it hot.
     fileprivate func report(_ harm: HarmWatch.Report) {
-        let body = L(
+        let body = Bilingual(
             "\(harm.displayName) accounts for \(Int(harm.share * 100))% of the CPU burned in the last \(harm.minutes) minutes, averaging \(Int(harm.averageCPU))%.",
             "过去 \(harm.minutes) 分钟里烧掉的 CPU 有 \(Int(harm.share * 100))% 来自 \(harm.displayName)，平均占用 \(Int(harm.averageCPU))%。")
 
         log.write("harm(\(harm.condition.rawValue)): \(harm.culprit) [\(harm.pid)] "
                 + "\(Int(harm.share * 100))% of \(harm.minutes)m, avg \(Int(harm.averageCPU))%")
-        notifier.send(title: harm.condition.headline, body: body)
+        notifier.send(title: harm.condition.headline.text, body: body.text)
 
         recentEvents.insert(Event(at: Date(), command: harm.culprit,
                                   headline: harm.condition.headline,

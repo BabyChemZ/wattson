@@ -719,12 +719,12 @@ final class AppModel: ObservableObject {
         ]
         state.events = [
                 Event(at: Date().addingTimeInterval(-240), command: "verge-mihomo",
-                      headline: L("background priority requested", "已降低优先级"),
-                      reasons: [L("CPU 402% vs its 47-day norm of 1.5%",
+                      headline: Bilingual("background priority requested", "已降低优先级"),
+                      reasons: [Bilingual("CPU 402% vs its 47-day norm of 1.5%",
                                   "CPU 402%，而它 47 天来的常态是 1.5%"),
-                                L("network throughput collapsed to 0% of normal",
+                                Bilingual("network throughput collapsed to 0% of normal",
                                   "网络吞吐跌到正常水平的 0%"),
-                                L("stopped making syscalls while pegging the CPU",
+                                Bilingual("stopped making syscalls while pegging the CPU",
                                   "占满 CPU 却不再发起系统调用")],
                       stage: "demoted", observedOnly: false),
         ]

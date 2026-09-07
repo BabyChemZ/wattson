@@ -288,7 +288,7 @@ physical-machine validation covers one M5 running macOS 26.**
 
 Public source does not mean an installer has been released. Check the Releases
 page for actual assets. Maintainers can run `./scripts/package-release.sh` to
-produce `dist/Wattson-0.1.1-arm64-preview.zip` and its SHA-256 checksum.
+produce `dist/Wattson-0.1.2-arm64-preview.zip` and its SHA-256 checksum.
 
 Developer ID signing and notarization are not required for small-scale preview
 distribution. Unzip, drag `Wattson.app` into Applications, and try opening it. If

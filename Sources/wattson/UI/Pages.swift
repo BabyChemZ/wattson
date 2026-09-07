@@ -7,8 +7,8 @@ struct OverviewPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let yield = model.state.yielding {
-                YieldBanner(session: yield, model: model)
+            if let session = model.state.inference {
+                InferenceBanner(session: session, model: model)
             }
             machineCard
 
@@ -674,36 +674,31 @@ struct DiskPage: View {
     }
 }
 
-/// Active while a heavy workload has the machine to itself.
-struct YieldBanner: View {
-    let session: YieldSession
+/// Compact banner on the dashboard while a model is running.
+struct InferenceBanner: View {
+    let session: InferenceSession
     @ObservedObject var model: AppModel
 
     var body: some View {
         Card {
-            HStack(alignment: .center, spacing: 14) {
-                Image(systemName: "arrow.down.forward.and.arrow.up.backward")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.accent)
+            HStack(spacing: 13) {
+                Image(systemName: "cpu.fill")
+                    .font(.system(size: 15)).foregroundStyle(Color.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(L("Cleared the way for \(session.trigger)",
-                           "已为 \(session.trigger) 让路"))
-                        .font(.ui(12.5, .semibold)).foregroundStyle(Color.ink)
-                    Text(L("\(session.yielded.count) idle programs on efficiency cores · \(formatMinutes(Int(session.duration / 60))) so far",
-                           "\(session.yielded.count) 个闲置程序已移到能效核 · 已运行 \(formatMinutes(Int(session.duration / 60)))"))
+                    HStack(spacing: 7) {
+                        Text(session.model ?? session.runtime)
+                            .font(.ui(12.5, .semibold)).foregroundStyle(Color.ink)
+                        PhasePill(phase: session.phase)
+                    }
+                    Text(L("\(formatMinutes(Int(session.duration / 60))) · \(formatBytes(session.peakProcessMemory)) · \(session.programsYielded) programs yielded",
+                           "已运行 \(formatMinutes(Int(session.duration / 60))) · 占用 \(formatBytes(session.peakProcessMemory)) · 已让路 \(session.programsYielded) 个"))
                         .font(.ui(10.5)).foregroundStyle(Color.inkMuted)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(model.temperatureText(model.state.vitals.sensors.cpu))
-                        .font(.figure(15, .medium))
-                        .foregroundStyle(model.coreTemperatureTint(
-                            model.state.vitals.sensors.cpu))
-                    if session.minutesThrottled >= 0.5 {
-                        Text(L("throttled \(formatMinutes(Int(session.minutesThrottled)))",
-                               "已降频 \(formatMinutes(Int(session.minutesThrottled)))"))
-                            .font(.ui(9.5)).foregroundStyle(Color.alertTint)
-                    }
+                if !model.state.inferenceWarnings.isEmpty {
+                    Label(model.state.inferenceWarnings[0].title,
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.ui(10.5, .medium)).foregroundStyle(Color.alertTint)
                 }
             }
         }

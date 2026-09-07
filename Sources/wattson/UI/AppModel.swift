@@ -195,6 +195,10 @@ final class AppModel: ObservableObject {
 
     private var previewSessions: [AwaySession]?
     var awaySessions: [AwaySession] { previewSessions ?? engine.awaySessions() }
+    private var previewInference: [InferenceSession]?
+    var inferenceSessions: [InferenceSession] {
+        previewInference ?? engine.inferenceSessions()
+    }
 
     /// The process table in the user's chosen order. Anomalies are not forced
     /// to the top here: when someone sorts by memory they mean by memory.
@@ -604,6 +608,38 @@ final class AppModel: ObservableObject {
         older.startCharge = 100
         older.endCharge = 98
         model.previewSessions = [session, older]
+
+        var live = InferenceSession(runtime: "mlx_lm", model: "gemma-3-12b-it-4bit",
+                                    startedAt: Date().addingTimeInterval(-252))
+        live.phase = .generating
+        live.peakProcessMemory = 10_100_000_000
+        live.peakMachineMemoryFraction = 0.89
+        live.peakGPU = 96
+        live.peakCPUTemperature = 84
+        live.minutesGenerating = 3.8
+        live.sawMemoryPressure = true
+        live.programsYielded = 7
+        state.inference = live
+        state.inferenceWarnings = [.memoryPressure]
+
+        func past(_ name: String, _ seconds: Double, _ memory: UInt64, _ temp: Double,
+                  _ swap: UInt64, _ throttled: Double, _ ago: Double) -> InferenceSession {
+            var s = InferenceSession(runtime: "mlx_lm", model: name,
+                                     startedAt: Date().addingTimeInterval(-ago))
+            s.endedAt = Date().addingTimeInterval(-ago + seconds)
+            s.peakProcessMemory = memory
+            s.peakCPUTemperature = temp
+            s.swapGrowth = swap
+            s.minutesThrottled = throttled
+            s.minutesGenerating = seconds / 60 * 0.8
+            return s
+        }
+        model.previewInference = [
+            past("gemma-3-12b-it-4bit", 252, 9_400_000_000, 78, 0, 0, 3600),
+            past("qwen3-14b-4bit", 483, 11_200_000_000, 91, 1_280_000_000, 2.4, 9000),
+            past("mistral-nemo-12b-4bit", 194, 9_600_000_000, 74, 0, 0, 26000),
+            past("gpt-oss-20b-4bit", 612, 14_100_000_000, 93, 3_400_000_000, 6.1, 90000),
+        ]
 
         model.state = state
         return model

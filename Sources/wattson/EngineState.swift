@@ -80,8 +80,10 @@ struct EngineState: Equatable {
     var performanceLevelName = "Performance"
     var coreNames: [Int: String] = [:]
     var machine = MachineInfo()
-    /// Set while the machine has been cleared for a heavy job.
-    var yielding: YieldSession?
+    /// Set while a model is loaded or generating.
+    var inference: InferenceSession?
+    /// Conditions worth telling the user about, right now.
+    var inferenceWarnings: [InferenceWarning] = []
     /// Machine-wide history, oldest first, for the load chart.
     var cpuTrail: [Double] = []
     var memoryTrail: [Double] = []

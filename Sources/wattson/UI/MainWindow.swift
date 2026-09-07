@@ -3,7 +3,7 @@ import SwiftUI
 /// The pages in the sidebar, in order.
 enum Page: String, CaseIterable, Identifiable {
     case overview, cpu, gpu, memory, sensors, battery, disk, network,
-         processes, history, away, events, settings
+         inference, processes, history, away, events, settings
     var id: String { rawValue }
 
     var title: String {
@@ -16,6 +16,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .disk:      return L("Disk", "磁盘")
         case .battery:   return L("Battery", "电池")
         case .network:   return L("Network", "网络")
+        case .inference: return L("Inference", "模型推理")
         case .processes: return L("Processes", "进程")
         case .history:   return L("History", "历史基线")
         case .away:      return L("While away", "离开报告")
@@ -34,6 +35,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .disk:      return "internaldrive"
         case .battery:   return "battery.100"
         case .network:   return "network"
+        case .inference: return "sparkles"
         case .processes: return "list.bullet"
         case .history:   return "chart.bar.xaxis"
         case .away:      return "moon.zzz"
@@ -46,7 +48,8 @@ enum Page: String, CaseIterable, Identifiable {
     /// doing, then what is Wattson making of it.
     static let hardware: [Page] = [.overview, .cpu, .gpu, .memory, .sensors,
                                    .battery, .disk, .network]
-    static let watchdog: [Page] = [.processes, .history, .away, .events, .settings]
+    static let watchdog: [Page] = [.inference, .processes, .history, .away,
+                                   .events, .settings]
 }
 
 /// Native sidebar material. SwiftUI has no direct equivalent that also works in
@@ -177,6 +180,7 @@ struct MainWindowView: View {
         case .disk:      DiskPage(model: model)
         case .battery:   BatteryPage(model: model)
         case .network:   NetworkPage(model: model)
+        case .inference: InferencePage(model: model)
         case .processes: ProcessesPage(model: model)
         case .history:   HistoryPage(model: model)
         case .away:      AwayPage(model: model)

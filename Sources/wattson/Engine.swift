@@ -62,10 +62,13 @@ final class Engine: @unchecked Sendable {
     /// rather than every second.
     private let awayLog = AwayLog()
     private var currentAway: AwaySession?
-    private var currentYield: YieldSession?
-    /// Processes stood down for the current yield, to be restored after.
+    private var currentInference: InferenceSession?
+    /// Processes stood down for the current run, to be restored after.
     private var yieldedPIDs: Set<Int32> = []
-    private let yieldLog = YieldLog()
+    private let inferenceLog = InferenceLog()
+    private var inferenceStartSwap: UInt64 = 0
+    private var lastRuntimeMemory: UInt64 = 0
+    private var raisedWarnings: Set<String> = []
     private var lastVitalsAt: Date?
 
     private var lastAlert: [String: Date] = [:]
@@ -160,7 +163,7 @@ final class Engine: @unchecked Sendable {
             $0.efficiencyCoreCount = self.vitalsSampler.cores.efficiencyCoreCount
             $0.performanceLevelName = self.vitalsSampler.cores.performanceLevelName
             $0.machine = self.machine
-            $0.yielding = self.currentYield
+            $0.inference = self.currentInference
             if $0.coreNames.isEmpty, !cores.isEmpty {
                 $0.coreNames = Dictionary(uniqueKeysWithValues: cores.map {
                     ($0.index, self.vitalsSampler.cores.name(for: $0.index))
@@ -503,9 +506,7 @@ final class Engine: @unchecked Sendable {
         let liveCommands = Set(deltas.lazy
             .filter { Lifelines.isProtected($0.command) == nil }
             .map(\.command))
-        if config.yieldForHeavyWork {
-            updateYield(rows: rows, deltas: deltas)
-        }
+        updateInference(rows: rows, deltas: deltas)
 
         let trained = liveCommands.filter {
             (store.baseline(for: $0)?.cpuPercent.count ?? 0) >= config.minimumSamples
@@ -551,58 +552,118 @@ final class Engine: @unchecked Sendable {
         onUpdate?(state)
     }
 
-    // MARK: - Yielding to heavy work
+    // MARK: - Inference
 
-    /// Clear the way when an inference runtime appears, and put everything back
-    /// when it leaves.
-    private func updateYield(rows: [ProcessRow], deltas: [ProcDelta]) {
-        let workload = deltas.first { HeavyWorkload.matches($0.command) }
+    /// Watch a model run from load to exit: clear space for it, follow which
+    /// phase it is in, and say something when the machine stops coping.
+    private func updateInference(rows: [ProcessRow], deltas: [ProcDelta]) {
+        let runtime = deltas.first { HeavyWorkload.matches($0.command) }
 
-        if let workload, currentYield == nil {
-            var session = YieldSession(startedAt: Date(), trigger: workload.command)
-
-            let planner = YieldPlanner(config: config)
-            let candidates = planner.candidates(from: rows) { self.store.baseline(for: $0) }
-            for candidate in candidates {
-                guard manual.demote(pid: candidate.pid) else { continue }
-                yieldedPIDs.insert(candidate.pid)
-                session.yielded.append(candidate.command)
-            }
-
-            currentYield = session
-            log.write("yielding to \(workload.command): stood down "
-                    + "\(session.yielded.count) idle programs")
+        guard let runtime else {
+            finishInference()
             return
         }
 
-        guard var session = currentYield else { return }
-
-        if workload == nil {
-            // The job is gone; put everything back exactly as it was.
-            for pid in yieldedPIDs { _ = manual.restorePriority(pid: pid) }
-            yieldedPIDs.removeAll()
-            session.endedAt = Date()
-            currentYield = nil
-            if session.duration > 20 { yieldLog.record(session) }
-            log.write(String(format: "yield ended after %.0fs — peak CPU %.0f°C, "
-                             + "throttled %.1f min",
-                             session.duration, session.peakCPUTemperature,
-                             session.minutesThrottled))
+        if currentInference == nil {
+            beginInference(runtime: runtime, rows: rows)
             return
         }
-
-        // Still running: keep the record of what the job cost.
-        session.peakCPUTemperature = max(session.peakCPUTemperature,
-                                         state.vitals.sensors.cpu ?? 0)
-        session.peakMemoryFraction = max(session.peakMemoryFraction,
-                                         state.vitals.memUsedFraction)
-        if state.vitals.thermal == .serious || state.vitals.thermal == .critical {
-            session.minutesThrottled += config.tickSeconds / 60
-        }
-        currentYield = session
+        advanceInference(runtime: runtime)
     }
 
-    func yieldSessions() -> [YieldSession] { queue.sync { yieldLog.sessions } }
+    private func beginInference(runtime: ProcDelta, rows: [ProcessRow]) {
+        var session = InferenceSession(runtime: runtime.command, startedAt: Date())
+        if let line = InferenceWatcher.commandLine(pid: runtime.pid) {
+            session.model = InferenceWatcher.modelName(fromCommandLine: line)
+        }
+
+        // Stand aside anything that is idle for itself. Only this app can tell
+        // an idle program from a quiet one, which is what makes the choice safe.
+        if config.yieldForHeavyWork {
+            let planner = YieldPlanner(config: config)
+            for candidate in planner.candidates(from: rows,
+                                                baseline: { self.store.baseline(for: $0) })
+            where manual.demote(pid: candidate.pid) {
+                yieldedPIDs.insert(candidate.pid)
+            }
+            session.programsYielded = yieldedPIDs.count
+        }
+
+        inferenceStartSwap = state.vitals.swapUsedBytes
+        lastRuntimeMemory = runtime.memBytes
+        raisedWarnings.removeAll()
+        currentInference = session
+
+        log.write("inference started: \(session.runtime)"
+                + (session.model.map { " (\($0))" } ?? "")
+                + " — yielded \(session.programsYielded) programs")
+    }
+
+    private func advanceInference(runtime: ProcDelta) {
+        guard var session = currentInference else { return }
+        let vitals = state.vitals
+
+        let growth = Double(monotonicDelta(runtime.memBytes, lastRuntimeMemory))
+            / max(runtime.interval, 0.001)
+        lastRuntimeMemory = runtime.memBytes
+        session.phase = InferenceWatcher.phase(
+            memoryGrowthPerSecond: growth,
+            cpuPercent: runtime.cpuPercent,
+            gpuPercent: vitals.gpu?.deviceUtilization ?? 0)
+
+        session.peakProcessMemory = max(session.peakProcessMemory, runtime.memBytes)
+        session.peakMachineMemoryFraction = max(session.peakMachineMemoryFraction,
+                                                vitals.memUsedFraction)
+        session.peakGPU = max(session.peakGPU, vitals.gpu?.deviceUtilization ?? 0)
+        session.peakCPUTemperature = max(session.peakCPUTemperature,
+                                         vitals.sensors.cpu ?? 0)
+        if session.phase == .generating {
+            session.minutesGenerating += config.tickSeconds / 60
+        }
+        if vitals.thermal == .serious || vitals.thermal == .critical {
+            session.minutesThrottled += config.tickSeconds / 60
+        }
+        session.swapGrowth = monotonicDelta(vitals.swapUsedBytes, inferenceStartSwap)
+        if vitals.memoryPressure != .normal { session.sawMemoryPressure = true }
+
+        currentInference = session
+        raiseWarnings(for: session)
+    }
+
+    /// The two walls this machine actually hits, said once each per run.
+    private func raiseWarnings(for session: InferenceSession) {
+        var active: [InferenceWarning] = []
+        if session.swapGrowth > 64 * 1024 * 1024 { active.append(.swapping) }
+        else if session.sawMemoryPressure { active.append(.memoryPressure) }
+        if session.wasThrottled { active.append(.throttling) }
+
+        for warning in active where !raisedWarnings.contains(warning.rawValue) {
+            raisedWarnings.insert(warning.rawValue)
+            log.write("inference: \(warning.rawValue)")
+            notifier.send(title: warning.title, body: warning.detail(session))
+        }
+        publish { $0.inferenceWarnings = active }
+    }
+
+    private func finishInference() {
+        guard var session = currentInference else { return }
+        for pid in yieldedPIDs { _ = manual.restorePriority(pid: pid) }
+        yieldedPIDs.removeAll()
+
+        session.endedAt = Date()
+        currentInference = nil
+        if session.duration > 15 { inferenceLog.record(session) }
+
+        log.write(String(format: "inference ended after %.0fs — generating %.1f min, "
+                         + "peak %.0f°C, throttled %.1f min, swap +%@",
+                         session.duration, session.minutesGenerating,
+                         session.peakCPUTemperature, session.minutesThrottled,
+                         formatBytes(session.swapGrowth)))
+        publish { $0.inferenceWarnings = [] }
+    }
+
+    func inferenceSessions() -> [InferenceSession] { queue.sync { inferenceLog.sessions } }
+
 
     /// Energy Impact integrated over the interval, per program. This is what
     /// answers "who drained the battery while I was out" — a question the

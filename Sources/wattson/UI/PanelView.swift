@@ -67,11 +67,6 @@ struct PanelView: View {
             Hairline()
             machineLine
 
-            if !heavyDrawers.isEmpty {
-                Hairline()
-                heavyDrawSection
-            }
-
             Hairline()
             if model.state.events.isEmpty {
                 // Say it rather than showing nothing: an empty area reads as a
@@ -97,49 +92,40 @@ struct PanelView: View {
                 }
                 .padding(.vertical, 7)
             }
+
+            if !topDrawers.isEmpty {
+                Hairline()
+                energySection
+            }
         }
     }
 
-    /// Processes that have been drawing significant energy for a few minutes.
+    /// What is draining the battery right now, and a way to stop it.
     ///
-    /// The system's own battery menu names these, and it is the question people
-    /// open a battery menu to ask. Ranked by Energy Impact rather than CPU on
-    /// purpose: a proxy at 2% CPU can be the biggest draw on the machine, and
-    /// sorting by processor time is exactly what hides it.
-    private var heavyDrawers: [ProcessRow] {
+    /// Ranked by Energy Impact rather than CPU on purpose: a proxy sitting at
+    /// 2% CPU can be the biggest draw on the machine, and sorting by processor
+    /// time is exactly what hides it. Always shown rather than only once a
+    /// process has been heavy for a while — something is always the largest
+    /// draw, and that is the question the menu is opened to answer. The bolt
+    /// marks the ones that have held there long enough to matter.
+    private var topDrawers: [ProcessRow] {
         model.state.rows
-            .filter(\.drawsHeavily)
+            .filter { $0.energyImpact > 0 }
             .sorted { $0.energyImpact > $1.energyImpact }
             .prefix(3)
             .map { $0 }
     }
 
-    private var heavyDrawSection: some View {
+    private var energySection: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 5) {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 8.5, weight: .semibold))
-                    .foregroundStyle(Color.alertTint)
-                SectionLabel(text: L("Using significant energy", "使用大量能耗"))
+                SectionLabel(text: L("Highest energy use", "能耗最高"))
                 Spacer()
+                Text(L("energy impact", "能耗指数"))
+                    .font(.ui(9)).foregroundStyle(Color.inkFaint)
             }
-            ForEach(heavyDrawers) { row in
-                Button {
-                    model.showInProcesses(row)
-                    model.openMainWindow()
-                } label: {
-                    HStack(spacing: 8) {
-                        Text(row.displayName)
-                            .font(.ui(11)).foregroundStyle(Color.ink)
-                            .lineLimit(1).truncationMode(.middle)
-                        Spacer(minLength: 6)
-                        Text(String(format: "%.0f", row.energyImpact))
-                            .font(.figure(10.5, .medium))
-                            .foregroundStyle(Color.inkMuted)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+            ForEach(topDrawers) { row in
+                EnergyRow(row: row, model: model)
             }
         }
         .padding(.horizontal, 14)
@@ -377,5 +363,52 @@ struct FooterButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+
+/// One process in the panel's energy list, with the means to end it.
+///
+/// The quit button appears under the pointer rather than sitting on every row:
+/// three permanent crosses in a menu invite the accident they exist to enable.
+struct EnergyRow: View {
+    let row: ProcessRow
+    @ObservedObject var model: AppModel
+
+    @State private var hovering = false
+
+    private var canQuit: Bool { !model.isProtected(row) }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Text(row.displayName)
+                .font(.ui(11)).foregroundStyle(Color.ink)
+                .lineLimit(1).truncationMode(.middle)
+            if row.drawsHeavily { HeavyDrawMark() }
+            Spacer(minLength: 6)
+            if hovering, canQuit {
+                Button {
+                    model.confirmTerminate(row)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.alertTint)
+                }
+                .buttonStyle(.plain)
+                .help(L("Quit \(row.displayName)", "结束 \(row.displayName)"))
+            }
+            Text(String(format: "%.0f", row.energyImpact))
+                .font(.figure(10.5, .medium))
+                .foregroundStyle(Color.inkMuted)
+                .frame(width: 26, alignment: .trailing)
+        }
+        .padding(.vertical, 1)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture {
+            model.showInProcesses(row)
+            model.openMainWindow()
+        }
+        .contextMenu { ProcessActions(row: row, model: model) }
     }
 }

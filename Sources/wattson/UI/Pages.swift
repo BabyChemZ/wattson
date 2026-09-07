@@ -128,7 +128,7 @@ struct OverviewPage: View {
             if let battery = model.state.vitals.battery {
                 StatTile(label: L("Battery", "电池"),
                          value: String(format: "%.0f°C", battery.temperature),
-                         caption: String(format: L("%.0f%% · health %.0f%%",
+                         caption: String(format: L("%.0f%% · %.0f%% health",
                                                    "%.0f%% · 健康 %.0f%%"),
                                          battery.chargePercent, battery.healthPercent),
                          tint: model.temperatureTint(battery.temperature),

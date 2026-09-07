@@ -42,7 +42,7 @@ enum RowStatus: Equatable {
 }
 
 /// Something the watchdog did, or would have done.
-struct Event: Identifiable, Equatable {
+struct Event: Identifiable, Equatable, Codable {
     let id = UUID()
     let at: Date
     let command: String

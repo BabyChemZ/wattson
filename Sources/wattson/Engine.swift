@@ -122,7 +122,7 @@ final class Engine: @unchecked Sendable {
     /// for the first half-minute, which reads as broken rather than patient.
     private static let warmupTicks = 4
     private static let warmupInterval: TimeInterval = 4
-    private var recentEvents: [Event] = []
+    private var recentEvents: [Event] = EventLog.load()
 
     /// Called after every sample with a fresh view of the machine.
     ///
@@ -560,8 +560,19 @@ final class Engine: @unchecked Sendable {
     /// Programs with a baseline, most CPU-hungry first.
     func knownProgramNames() -> [String] {
         queue.sync {
-            store.baselines.values
-                .sorted { ($0.cpuPercent.median ?? 0) > ($1.cpuPercent.median ?? 0) }
+            // A program seen twice can carry a median of 100% and nothing to
+            // read — no spread, no daily history, no burst durations. Rank the
+            // modelled ones first so the page opens on a program that actually
+            // has a past, rather than on whichever one happened to be busy the
+            // two times it was sampled.
+            let threshold = config.minimumSamples
+            return store.baselines.values
+                .sorted {
+                    let left = $0.cpuPercent.count >= threshold
+                    let right = $1.cpuPercent.count >= threshold
+                    if left != right { return left }
+                    return ($0.cpuPercent.median ?? 0) > ($1.cpuPercent.median ?? 0)
+                }
                 .map(\.command)
         }
     }
@@ -1148,6 +1159,7 @@ final class Engine: @unchecked Sendable {
                                   stage: incident.stage.rawValue,
                                   observedOnly: config.dryRun), at: 0)
         if recentEvents.count > 50 { recentEvents.removeLast() }
+        EventLog.save(recentEvents)
 
         notifier.send(title: headline, body: body)
     }
@@ -1158,8 +1170,14 @@ struct Log {
     private let url = Config.directory.appendingPathComponent("wattson.log")
     private let formatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
+        // ISO8601DateFormatter defaults to GMT, which put every line seven
+        // hours away from the clock the reader is looking at. The offset is
+        // kept because these lines get pasted into bug reports, where a bare
+        // local time is ambiguous.
+        f.timeZone = .current
         f.formatOptions = [.withFullDate, .withTime, .withDashSeparatorInDate,
-                           .withColonSeparatorInTime, .withSpaceBetweenDateAndTime]
+                           .withColonSeparatorInTime, .withSpaceBetweenDateAndTime,
+                           .withTimeZone]
         return f
     }()
 
@@ -1175,5 +1193,31 @@ struct Log {
         } else {
             try? line.data(using: .utf8)!.write(to: url)
         }
+    }
+}
+
+
+/// The flagged events, kept across restarts.
+///
+/// These were held in memory only, so quitting the app — or a crash, or a
+/// system update rebooting overnight — erased the record of everything it had
+/// caught. That is precisely backwards for a watchdog whose whole purpose is
+/// to tell you what happened while you were not there.
+enum EventLog {
+    private static let url = Config.directory.appendingPathComponent("events.json")
+    private static let limit = 50
+
+    static func load() -> [Event] {
+        guard let data = try? Data(contentsOf: url),
+              let events = try? JSONDecoder().decode([Event].self, from: data)
+        else { return [] }
+        return Array(events.prefix(limit))
+    }
+
+    static func save(_ events: [Event]) {
+        guard let data = try? JSONEncoder().encode(Array(events.prefix(limit))) else { return }
+        try? FileManager.default.createDirectory(at: Config.directory,
+                                                 withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
     }
 }

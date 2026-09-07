@@ -36,6 +36,8 @@ final class AppModel: ObservableObject {
             Task { @MainActor in self?.state = newState }
         }
 
+        Task { @MainActor in CaptureDriver.startIfRequested(model: self) }
+
         // A menu bar icon alone does not tell anyone the rest of the app exists.
         if !loaded.hasShownWindow || ProcessInfo.processInfo
             .environment["WATTSON_SHOW_WINDOW"] != nil {
@@ -102,7 +104,7 @@ final class AppModel: ObservableObject {
     var learningTail: String {
         state.learningPrograms > 0
             ? L("+\(state.learningPrograms) learning", "+\(state.learningPrograms) 学习中")
-            : L("all running programs", "运行中的都已建立")
+            : L("all modelled", "运行中的都已建立")
     }
 
     var loadText: String {

@@ -41,6 +41,10 @@ final class Engine: @unchecked Sendable {
     private var vitalsTimer: DispatchSourceTimer?
     private static let vitalsInterval: TimeInterval = 1
     private var terminationSource: DispatchSourceSignal?
+    private var activity: NSObjectProtocol?
+    private let engineStartedAt = Date()
+    /// True when another process already owns the engine.
+    private(set) var isSecondary = false
     private var timer: DispatchSourceTimer?
 
     private var previous: Snapshot?
@@ -126,6 +130,21 @@ final class Engine: @unchecked Sendable {
     func start(onUpdate: @escaping (EngineState) -> Void) {
         guard timer == nil else { return }
         self.onUpdate = onUpdate
+
+        guard SingleInstance.acquire() else {
+            log.write("another instance already holds the engine — "
+                    + "this one will display only")
+            isSecondary = true
+            return
+        }
+
+        // Keep sampling on a fixed cadence in the background. Without this,
+        // App Nap throttles the timers of a menu-bar-only app and the readings
+        // silently stop while the app still looks alive.
+        activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep],
+            reason: "Continuous system monitoring")
+
         installShutdownHooks()
         log.write("wattson started — tick \(Int(config.tickSeconds))s, "
                 + "mode \(config.dryRun ? "observe-only" : "active")")
@@ -230,8 +249,12 @@ final class Engine: @unchecked Sendable {
         let away = idle > 600
 
         if away, currentAway == nil {
-            // Backdate to when the input actually stopped, not when we noticed.
-            var session = AwaySession(startedAt: now.addingTimeInterval(-idle))
+            // Backdate to when input actually stopped — but never to before the
+            // engine was running, since nothing was observed then and claiming
+            // otherwise produced sessions that reported a tidy ten minutes with
+            // no data in them at all.
+            let began = max(now.addingTimeInterval(-idle), engineStartedAt)
+            var session = AwaySession(startedAt: began)
             session.startCharge = vitals.battery?.chargePercent
             session.wasOnBattery = vitals.battery.map { !$0.isPluggedIn } ?? false
             currentAway = session
@@ -256,7 +279,10 @@ final class Engine: @unchecked Sendable {
             session.endedAt = now
             session.endCharge = vitals.battery?.chargePercent
             currentAway = nil
-            if session.duration > 300 {
+            // A session with no per-program energy in it saw nothing: the slow
+            // pipeline never ran during it, so there is nothing to report and
+            // recording it only implies coverage that did not exist.
+            if session.duration > 300, !session.energyByProgram.isEmpty {
                 awayLog.record(session)
                 announce(session)
             }

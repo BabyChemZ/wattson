@@ -14,6 +14,8 @@ enum Install {
     }
 
     static func install() {
+        // Launch the app itself, not the CLI. Two engines writing the same
+        // files was worse than no login item at all.
         let binary = URL(fileURLWithPath: CommandLine.arguments[0])
             .resolvingSymlinksInPath().path
         let logs = Config.directory.path
@@ -28,7 +30,6 @@ enum Install {
             <key>ProgramArguments</key>
             <array>
                 <string>\(binary)</string>
-                <string>watch</string>
             </array>
             <key>RunAtLoad</key><true/>
             <key>KeepAlive</key><true/>

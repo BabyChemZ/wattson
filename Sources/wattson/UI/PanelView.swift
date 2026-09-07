@@ -67,6 +67,11 @@ struct PanelView: View {
             Hairline()
             machineLine
 
+            if !heavyDrawers.isEmpty {
+                Hairline()
+                heavyDrawSection
+            }
+
             Hairline()
             if model.state.events.isEmpty {
                 // Say it rather than showing nothing: an empty area reads as a
@@ -93,6 +98,52 @@ struct PanelView: View {
                 .padding(.vertical, 7)
             }
         }
+    }
+
+    /// Processes that have been drawing significant energy for a few minutes.
+    ///
+    /// The system's own battery menu names these, and it is the question people
+    /// open a battery menu to ask. Ranked by Energy Impact rather than CPU on
+    /// purpose: a proxy at 2% CPU can be the biggest draw on the machine, and
+    /// sorting by processor time is exactly what hides it.
+    private var heavyDrawers: [ProcessRow] {
+        model.state.rows
+            .filter(\.drawsHeavily)
+            .sorted { $0.energyImpact > $1.energyImpact }
+            .prefix(3)
+            .map { $0 }
+    }
+
+    private var heavyDrawSection: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(Color.alertTint)
+                SectionLabel(text: L("Using significant energy", "使用大量能耗"))
+                Spacer()
+            }
+            ForEach(heavyDrawers) { row in
+                Button {
+                    model.showInProcesses(row)
+                    model.openMainWindow()
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(row.displayName)
+                            .font(.ui(11)).foregroundStyle(Color.ink)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 6)
+                        Text(String(format: "%.0f", row.energyImpact))
+                            .font(.figure(10.5, .medium))
+                            .foregroundStyle(Color.inkMuted)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
     }
 
     /// One line about the machine as a whole, under the per-reading rows.

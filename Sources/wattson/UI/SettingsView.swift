@@ -169,16 +169,23 @@ extension SettingsView {
                 .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 10) {
-                AccentButton(title: L("Raise to \(recommended / 1024) GB",
-                                      "提高到 \(recommended / 1024) GB")) {
-                    model.raiseGPUMemory(to: recommended)
-                }
-                if current > 0 {
-                    PlainButton(title: L("Restore default", "恢复默认")) {
-                        model.resetGPUMemory()
+            if GPUMemoryLimit.isWorthRaising(totalBytes: total) {
+                HStack(spacing: 10) {
+                    AccentButton(title: L("Raise to \(recommended / 1024) GB",
+                                          "提高到 \(recommended / 1024) GB")) {
+                        model.raiseGPUMemory(to: recommended)
+                    }
+                    if current > 0 {
+                        PlainButton(title: L("Restore default", "恢复默认")) {
+                            model.resetGPUMemory()
+                        }
                     }
                 }
+            } else {
+                Text(L("Not worth raising here — the default already allows about as much as is safe.",
+                       "这台机器不值得调整 —— 默认值已接近可安全分配的上限。"))
+                    .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

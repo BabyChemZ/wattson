@@ -29,8 +29,19 @@ enum GPUMemoryLimit {
     /// which is a far worse outcome than a model running slightly slower.
     static func recommendedMB(totalBytes: UInt64) -> Int {
         let totalMB = Int(totalBytes / (1024 * 1024))
-        let reserve = max(5 * 1024, totalMB / 6)   // at least 5 GB for the OS
-        return max(1024, totalMB - reserve)
+        // A quarter of the machine for macOS, floored at 4 GB and capped at
+        // 12 GB — a fixed reserve is wrong at both ends of the range: it
+        // strangles an 8 GB Mac and wastes half of a 128 GB one.
+        let reserve = min(max(totalMB / 4, 4096), 12288)
+        // Never propose less than the system already allows, which a flat
+        // reserve did on small machines: the "improvement" made things worse.
+        return max(totalMB - reserve, defaultApproxMB(totalBytes: totalBytes))
+    }
+
+    /// Whether raising it gains anything on this machine at all.
+    static func isWorthRaising(totalBytes: UInt64) -> Bool {
+        recommendedMB(totalBytes: totalBytes)
+            > defaultApproxMB(totalBytes: totalBytes) + 512
     }
 
     /// Roughly what the system uses when nothing is set, for display.

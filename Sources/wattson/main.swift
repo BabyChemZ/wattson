@@ -155,6 +155,42 @@ case "sensors":
     print(fans.isEmpty ? "\nno fans" : "\nfans: \(fans.map { String(format: "%.0f rpm", $0) })")
     exit(0)
 
+case "reclaim":
+    // Internal: what would be suggested right now, against real processes.
+    let sampler2 = Sampler()
+    guard let a = sampler2.snapshot() else { print("sampling failed"); exit(1) }
+    Thread.sleep(forTimeInterval: 5)
+    guard let b = sampler2.snapshot() else { print("sampling failed"); exit(1) }
+
+    let store2 = BaselineStore()
+    let deltas = b.delta(since: a)
+    let rows = deltas.map { d in
+        ProcessRow(pid: d.pid, parentPID: d.parentPID, command: d.command,
+                   displayName: ProcessNaming.displayName(pid: d.pid, fallback: d.command),
+                   cpuPercent: d.cpuPercent, memBytes: d.memBytes,
+                   usualCPUPercent: nil, energyImpact: d.energyImpact,
+                   netBytesPerSecond: 0, recentCPU: [], status: .normal, detail: "")
+    }
+    let want = UInt64((Double(arguments.dropFirst().first.flatMap { Double($0) } ?? 4) )
+                      * 1_073_741_824)
+    let plan = MemoryReclaim.plan(shortfall: want, rows: rows, config: config,
+                                  baseline: { store2.baseline(for: $0) })
+
+    print("目标腾出 \(formatBytes(want))，找到 \(plan.candidates.count) 个候选：\n")
+    for c in plan.candidates.prefix(10) {
+        print(String(format: "  %-32@ %9@  %d 进程  idle %.0f%%",
+                     c.displayName as NSString, formatBytes(c.memBytes) as NSString,
+                     c.processCount, c.idleness * 100))
+    }
+    print("\n  合计可腾出 \(formatBytes(plan.totalAvailable))"
+        + (plan.canCoverShortfall ? " —— 够" : " —— 不够"))
+    let minimal = plan.minimalSelection
+    if !minimal.isEmpty {
+        print("  最少需关 \(minimal.count) 个: "
+            + minimal.map(\.displayName).joined(separator: ", "))
+    }
+    exit(0)
+
 case "install":
     Install.install()
 

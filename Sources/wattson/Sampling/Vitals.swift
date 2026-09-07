@@ -45,18 +45,6 @@ struct SystemVitals: Equatable {
     /// What a new allocation can realistically obtain.
     var memAvailableBytes: UInt64 { memUnusedBytes + memReclaimableBytes }
 
-    /// Usage counting what has been pushed out to disk.
-    ///
-    /// Plain occupancy falls when the system swaps, which reads as the machine
-    /// getting more comfortable when the opposite has happened: the programs
-    /// still need those pages and will fault them back in, slowly, the moment
-    /// they are touched. Anything shown as a health indicator has to include
-    /// them or it flatters exactly the situation it should be flagging.
-    var memEffectiveFraction: Double {
-        guard memTotalBytes > 0 else { return 0 }
-        return Double(memUsedBytes + swapUsedBytes) / Double(memTotalBytes)
-    }
-
     var isSwapping: Bool { swapUsedBytes > 256 * 1024 * 1024 }
 
     /// Parse the block of summary lines `top` emits before the table.

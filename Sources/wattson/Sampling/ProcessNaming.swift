@@ -19,6 +19,32 @@ enum ProcessNaming {
         cache.name(pid: pid, fallback: fallback)
     }
 
+    /// The bundle a process belongs to, as a grouping key.
+    ///
+    /// Walking parents is not enough: a browser's content processes register
+    /// as applications in their own right, so each one looks like its own root
+    /// even though all of them live inside one .app and go away together when
+    /// it quits. The bundle path is what actually ties them together.
+    static func bundleIdentity(pid: Int32, fallback: String) -> String {
+        bundleCache.name(pid: pid, fallback: fallback)
+    }
+
+    private static let bundleCache: NameCache = {
+        let cache = NameCache()
+        cache.resolvesBundle = true
+        return cache
+    }()
+
+    fileprivate static func resolveBundle(pid: Int32, fallback: String) -> String {
+        guard let path = executablePath(pid: pid) else { return fallback }
+        var current = URL(fileURLWithPath: path)
+        while current.pathComponents.count > 1 {
+            current = current.deletingLastPathComponent()
+            if current.pathExtension == "app" { return current.path }
+        }
+        return path
+    }
+
     /// Resolve once per process; the answer cannot change while it lives.
     fileprivate static func resolve(pid: Int32, fallback: String) -> String {
         // A GUI application knows its own display name, localised.
@@ -41,7 +67,7 @@ enum ProcessNaming {
         return executable.isEmpty ? fallback : executable
     }
 
-    private static func executablePath(pid: Int32) -> String? {
+    static func executablePath(pid: Int32) -> String? {
         var buffer = [CChar](repeating: 0, count: 4096)
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
         guard length > 0 else { return nil }
@@ -75,6 +101,9 @@ private final class NameCache: @unchecked Sendable {
     private let lock = NSLock()
     private var names: [Int32: String] = [:]
 
+    /// Set for the cache that resolves bundles rather than display names.
+    var resolvesBundle = false
+
     func name(pid: Int32, fallback: String) -> String {
         lock.lock()
         if let cached = names[pid] {
@@ -83,7 +112,9 @@ private final class NameCache: @unchecked Sendable {
         }
         lock.unlock()
 
-        let resolved = ProcessNaming.resolve(pid: pid, fallback: fallback)
+        let resolved = resolvesBundle
+            ? ProcessNaming.resolveBundle(pid: pid, fallback: fallback)
+            : ProcessNaming.resolve(pid: pid, fallback: fallback)
 
         lock.lock()
         // PIDs are reused; a cache that only grows would eventually answer for

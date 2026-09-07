@@ -4,6 +4,7 @@ import Foundation
 struct ProcessRow: Identifiable, Equatable {
     var id: Int32 { pid }
     let pid: Int32
+    let parentPID: Int32
     /// The raw executable name from `top`. Baselines are keyed on this, so it
     /// must stay stable even as the displayed name gets friendlier.
     let command: String

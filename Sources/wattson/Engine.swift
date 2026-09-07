@@ -419,7 +419,8 @@ final class Engine: @unchecked Sendable {
             cpuTrail[delta.pid] = trail
 
             if let reason = Lifelines.isProtected(delta.command) {
-                rows.append(ProcessRow(pid: delta.pid, command: delta.command,
+                rows.append(ProcessRow(pid: delta.pid, parentPID: delta.parentPID,
+                                       command: delta.command,
                                        displayName: ProcessNaming.displayName(
                                         pid: delta.pid, fallback: delta.command),
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
@@ -431,7 +432,8 @@ final class Engine: @unchecked Sendable {
                 continue
             }
             if config.neverTouch.contains(delta.command) {
-                rows.append(ProcessRow(pid: delta.pid, command: delta.command,
+                rows.append(ProcessRow(pid: delta.pid, parentPID: delta.parentPID,
+                                       command: delta.command,
                                        displayName: ProcessNaming.displayName(
                                         pid: delta.pid, fallback: delta.command),
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
@@ -454,7 +456,8 @@ final class Engine: @unchecked Sendable {
             switch verdict.judgment {
             case .anomalous:
                 handleAnomaly(verdict, delta: delta)
-                rows.append(ProcessRow(pid: delta.pid, command: delta.command,
+                rows.append(ProcessRow(pid: delta.pid, parentPID: delta.parentPID,
+                                       command: delta.command,
                                        displayName: ProcessNaming.displayName(
                                         pid: delta.pid, fallback: delta.command),
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
@@ -467,7 +470,8 @@ final class Engine: @unchecked Sendable {
             case .learning:
                 resolveIfNeeded(pid: delta.pid, command: delta.command)
                 store.observe(delta)
-                rows.append(ProcessRow(pid: delta.pid, command: delta.command,
+                rows.append(ProcessRow(pid: delta.pid, parentPID: delta.parentPID,
+                                       command: delta.command,
                                        displayName: ProcessNaming.displayName(
                                         pid: delta.pid, fallback: delta.command),
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
@@ -481,7 +485,8 @@ final class Engine: @unchecked Sendable {
             case .normal:
                 resolveIfNeeded(pid: delta.pid, command: delta.command)
                 store.observe(delta)
-                rows.append(ProcessRow(pid: delta.pid, command: delta.command,
+                rows.append(ProcessRow(pid: delta.pid, parentPID: delta.parentPID,
+                                       command: delta.command,
                                        displayName: ProcessNaming.displayName(
                                         pid: delta.pid, fallback: delta.command),
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,

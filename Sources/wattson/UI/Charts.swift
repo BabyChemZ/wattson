@@ -288,58 +288,109 @@ struct BarChart: View {
     var tint: Color = .cpuTint
     var ceiling: Double = 100
     var guides: [Double] = [25, 50, 75, 100]
-    /// How many columns to draw regardless of how many samples there are.
-    ///
-    /// Several hundred hairline bars is visual noise, not information: nobody
-    /// reads a single second off a chart. Samples are averaged into this many
-    /// buckets instead, which gives each column room to breathe and makes the
-    /// shape of the last hour legible at a glance.
     var columns: Int = 48
+    var unit: String = "%"
+    /// Wall-clock seconds each sample covers, so a hovered column can say when.
+    var secondsPerSample: Double = 1
+
+    @State private var hovered: Int?
 
     var body: some View {
-        Canvas { context, size in
-            for guide in guides {
-                let y = size.height * (1 - min(guide / ceiling, 1))
-                var line = Path()
-                line.move(to: CGPoint(x: 0, y: y))
-                line.addLine(to: CGPoint(x: size.width, y: y))
-                context.stroke(line, with: .color(.gray.opacity(0.14)), lineWidth: 0.5)
-            }
-
+        GeometryReader { geo in
             let buckets = Self.bucket(values, into: columns)
-            guard !buckets.isEmpty else { return }
+            let slot = geo.size.width / CGFloat(columns)
 
-            let slot = size.width / CGFloat(columns)
-            let barWidth = max(2, slot * 0.58)
-
-            // Two layers per column: the bucket's peak in a faint wash, its
-            // mean solid on top. Averaging alone flattens the spikes that make
-            // a load chart worth looking at — a burst lasting a few seconds
-            // disappears into the surrounding minute. This keeps the spike
-            // visible as headroom above the body of the bar while the solid
-            // part still reads as the level.
-            for (index, bucket) in buckets.enumerated() {
-                let x = CGFloat(index) * slot + (slot - barWidth) / 2
-
-                let peakRatio = min(max(bucket.peak / ceiling, 0), 1)
-                if peakRatio > 0 {
-                    let peakHeight = max(2, size.height * peakRatio)
-                    context.fill(
-                        Path(roundedRect: CGRect(x: x, y: size.height - peakHeight,
-                                                 width: barWidth, height: peakHeight),
-                             cornerRadius: min(barWidth / 2, 2)),
-                        with: .color(tint.opacity(0.22)))
+            ZStack(alignment: .topLeading) {
+                Canvas { context, size in
+                    draw(context: context, size: size, buckets: buckets, slot: slot)
                 }
 
-                let meanRatio = min(max(bucket.mean / ceiling, 0), 1)
-                let meanHeight = max(1.5, size.height * meanRatio)
-                context.fill(
-                    Path(roundedRect: CGRect(x: x, y: size.height - meanHeight,
-                                             width: barWidth, height: meanHeight),
-                         cornerRadius: min(barWidth / 2, 2)),
-                    with: .color(tint.opacity(0.5 + 0.3 * meanRatio)))
+                if let index = hovered, index < buckets.count {
+                    readout(for: buckets[index], at: index, slot: slot, size: geo.size)
+                }
+            }
+            // A chart you cannot interrogate is a picture. Reading a value off
+            // one is the most common thing anybody wants to do with it.
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let point):
+                    let index = Int(point.x / max(slot, 0.001))
+                    hovered = (0..<buckets.count).contains(index) ? index : nil
+                case .ended:
+                    hovered = nil
+                }
             }
         }
+    }
+
+    private func draw(context: GraphicsContext, size: CGSize,
+                      buckets: [Bucket], slot: CGFloat) {
+        for guide in guides {
+            let y = size.height * (1 - min(guide / ceiling, 1))
+            var line = Path()
+            line.move(to: CGPoint(x: 0, y: y))
+            line.addLine(to: CGPoint(x: size.width, y: y))
+            context.stroke(line, with: .color(.gray.opacity(0.14)), lineWidth: 0.5)
+        }
+
+        let barWidth = max(2, slot * 0.58)
+        for (index, bucket) in buckets.enumerated() {
+            let x = CGFloat(index) * slot + (slot - barWidth) / 2
+            let isHovered = index == hovered
+
+            let peakRatio = min(max(bucket.peak / ceiling, 0), 1)
+            if peakRatio > 0 {
+                let height = max(2, size.height * peakRatio)
+                context.fill(
+                    Path(roundedRect: CGRect(x: x, y: size.height - height,
+                                             width: barWidth, height: height),
+                         cornerRadius: min(barWidth / 2, 2)),
+                    with: .color(tint.opacity(isHovered ? 0.4 : 0.22)))
+            }
+
+            let meanRatio = min(max(bucket.mean / ceiling, 0), 1)
+            let height = max(1.5, size.height * meanRatio)
+            context.fill(
+                Path(roundedRect: CGRect(x: x, y: size.height - height,
+                                         width: barWidth, height: height),
+                     cornerRadius: min(barWidth / 2, 2)),
+                with: .color(tint.opacity(isHovered ? 1 : 0.5 + 0.3 * meanRatio)))
+        }
+    }
+
+    /// Value and time for the column under the pointer, kept inside the chart.
+    private func readout(for bucket: Bucket, at index: Int,
+                         slot: CGFloat, size: CGSize) -> some View {
+        let width: CGFloat = 108
+        let x = min(max(CGFloat(index) * slot + slot / 2 - width / 2, 0),
+                    max(size.width - width, 0))
+        return VStack(alignment: .leading, spacing: 1) {
+            Text(String(format: "%.0f\(unit)", bucket.mean))
+                .font(.figure(11, .medium)).foregroundStyle(Color.ink)
+            if bucket.peak > bucket.mean + 1 {
+                Text(L("peak \(Int(bucket.peak))\(unit)", "峰值 \(Int(bucket.peak))\(unit)"))
+                    .font(.ui(9)).foregroundStyle(Color.inkMuted)
+            }
+            Text(timeLabel(index: index))
+                .font(.figure(9)).foregroundStyle(Color.inkFaint)
+        }
+        .padding(.horizontal, 7).padding(.vertical, 5)
+        .frame(width: width, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(Color.surface)
+            .shadow(color: .black.opacity(0.18), radius: 5, y: 2))
+        .offset(x: x, y: 2)
+        .allowsHitTesting(false)
+    }
+
+    /// Columns run oldest to newest, so the last one is now.
+    private func timeLabel(index: Int) -> String {
+        let perColumn = max(Double(values.count) / Double(columns), 1) * secondsPerSample
+        let secondsAgo = Double(columns - 1 - index) * perColumn
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: Date().addingTimeInterval(-secondsAgo))
     }
 
     struct Bucket {
@@ -347,15 +398,11 @@ struct BarChart: View {
         var peak: Double
     }
 
-    /// Reduce the series to `count` buckets, oldest first, keeping both the
-    /// average and the highest sample in each. A short series occupies fewer
-    /// columns rather than being stretched across the full width.
     static func bucket(_ values: [Double], into count: Int) -> [Bucket] {
         guard count > 0, !values.isEmpty else { return [] }
         guard values.count > count else {
             return values.map { Bucket(mean: $0, peak: $0) }
         }
-
         let size = Double(values.count) / Double(count)
         return (0..<count).map { index in
             let start = Int(Double(index) * size)

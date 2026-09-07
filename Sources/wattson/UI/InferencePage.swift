@@ -250,9 +250,10 @@ struct MemoryReclaimCard: View {
                 Text(candidate.displayName)
                     .font(.ui(11.5)).foregroundStyle(Color.ink)
                     .lineLimit(1).truncationMode(.middle)
-                Text(candidate.isApplication
-                     ? L("app · idle", "应用 · 空闲")
-                     : L("process · idle", "进程 · 空闲"))
+                Text(candidate.processCount > 1
+                     ? L("\(candidate.processCount) processes · idle",
+                         "\(candidate.processCount) 个进程 · 空闲")
+                     : L("idle", "空闲"))
                     .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
             }
             Spacer()

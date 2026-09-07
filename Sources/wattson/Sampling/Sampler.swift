@@ -6,9 +6,13 @@ import Foundation
 /// a watchdog you have to grant privileges to is a watchdog most people never
 /// install.
 struct Sampler {
-    /// How many processes to keep, ranked by CPU. A runaway is by definition
-    /// near the top, so there is no reason to parse the whole table.
-    var topProcessCount = 50
+    /// How many processes to keep, ranked by CPU.
+    ///
+    /// A runaway is near the top by definition, so 50 was enough for the
+    /// watchdog. It is not enough for anything asking about memory: a program
+    /// holding two gigabytes at zero percent CPU never appeared at all.
+    /// Measured, 150 costs 0.03s more than 50.
+    var topProcessCount = 150
 
     private static let topColumns =
         "pid,command,ppid,time,csw,idlew,sysmach,sysbsd,instrs,cycles,mem,power"

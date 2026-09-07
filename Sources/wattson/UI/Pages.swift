@@ -26,8 +26,8 @@ struct OverviewPage: View {
                          value: String(format: "%.0f%%",
                                        model.state.vitals.memUsedFraction * 100),
                          caption: model.state.vitals.isSwapping
-                            ? L("+\(formatBytes(model.state.vitals.swapUsedBytes)) on disk",
-                                "另有 \(formatBytes(model.state.vitals.swapUsedBytes)) 在磁盘")
+                            ? L("swap \(formatBytes(model.state.vitals.swapUsedBytes))",
+                                "交换区 \(formatBytes(model.state.vitals.swapUsedBytes))")
                             : model.state.vitals.memoryPressure.label,
                          tint: model.pressureTint,
                          fraction: model.state.vitals.memUsedFraction)
@@ -401,12 +401,6 @@ struct MemoryPage: View {
                                 .background(Capsule().fill(model.pressureTint))
                         }
 
-                        if vitals.isSwapping {
-                            Text(L("\(formatBytes(vitals.swapUsedBytes)) held on disk — usage would be \(Int(vitals.memEffectiveFraction * 100))% if it were resident",
-                                   "另有 \(formatBytes(vitals.swapUsedBytes)) 压在磁盘上 —— 若全部驻留，占用为 \(Int(vitals.memEffectiveFraction * 100))%"))
-                                .font(.ui(10.5)).foregroundStyle(Color.swapTint)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
                         VStack(alignment: .leading, spacing: 5) {
                             LegendDot(color: .memoryTint, label: L("App", "应用"),
                                       value: formatBytes(appMemory))
@@ -416,6 +410,8 @@ struct MemoryPage: View {
                                       value: formatBytes(vitals.memCompressedBytes))
                             LegendDot(color: .idleTint, label: L("Free", "空闲"),
                                       value: formatBytes(vitals.memUnusedBytes))
+                            LegendDot(color: .swapTint, label: L("Swap", "交换区"),
+                                      value: formatBytes(vitals.swapUsedBytes))
                         }
                     }
                     Spacer()
@@ -502,7 +498,7 @@ struct BatteryPage: View {
                     Card(title: L("Temperature history", "温度历史")) {
                         BarChart(values: model.state.temperatureTrail,
                                  tint: model.temperatureTint(battery.temperature),
-                                 ceiling: 50, guides: [30, 35, 40])
+                                 ceiling: 50, guides: [30, 35, 40], unit: "°C")
                             .frame(height: 100)
                         HStack {
                             Text(model.trailSpanText)
@@ -522,7 +518,7 @@ struct BatteryPage: View {
                         Card(title: L("Power draw", "功率")) {
                             BarChart(values: model.state.powerTrail, tint: .alertTint,
                                      ceiling: max(model.state.powerTrail.max() ?? 30, 5),
-                                     guides: [])
+                                     guides: [], unit: " W")
                                 .frame(height: 74)
                             Text(String(format: L("now %.1f W", "当前 %.1f W"),
                                         abs(battery.watts)))

@@ -42,6 +42,10 @@ struct Config: Codable {
 
     // MARK: Notifying
 
+    /// Stand idle programs down onto the efficiency cores while a heavy
+    /// workload — model inference, for now — is running.
+    var yieldForHeavyWork = true
+
     /// Which live readings to show in the menu bar itself.
     var menuBarMetrics: [MenuBarMetric] = [.cpu, .memory]
     /// Prefix each reading with a one-letter tag, so several are tellable apart.
@@ -99,6 +103,7 @@ struct Config: Codable {
         escalateAfterTicks = value(.escalateAfterTicks, fallback.escalateAfterTicks)
         maxRestartsPerHour = value(.maxRestartsPerHour, fallback.maxRestartsPerHour)
         dryRun = value(.dryRun, fallback.dryRun)
+        yieldForHeavyWork = value(.yieldForHeavyWork, fallback.yieldForHeavyWork)
         neverTouch = value(.neverTouch, fallback.neverTouch)
         menuBarMetrics = value(.menuBarMetrics, fallback.menuBarMetrics)
         menuBarLabels = value(.menuBarLabels, fallback.menuBarLabels)

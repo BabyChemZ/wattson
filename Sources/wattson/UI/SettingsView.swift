@@ -56,6 +56,19 @@ struct SettingsView: View {
             .toggleStyle(.switch)
             .tint(Color.accent)
 
+            Toggle(isOn: $model.config.yieldForHeavyWork) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L("Make room for heavy work", "为重负载让路"))
+                        .font(.ui(12.5, .medium)).foregroundStyle(Color.ink)
+                    Text(L("Idle programs move to efficiency cores while model inference runs, and return afterwards.",
+                           "模型推理运行时，闲置程序移到能效核，结束后自动恢复。"))
+                        .font(.ui(11)).foregroundStyle(Color.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.switch)
+            .tint(Color.accent)
+
             Text(L("Never applies to system processes or remote access — SSH, Tailscale, VNC, ToDesk, WARP.",
                    "不适用于系统进程和远程连接：SSH、Tailscale、VNC、ToDesk、WARP。"))
                 .font(.ui(10.5))

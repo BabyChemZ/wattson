@@ -7,6 +7,9 @@ struct OverviewPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let yield = model.state.yielding {
+                YieldBanner(session: yield, model: model)
+            }
             machineCard
 
             HStack(spacing: 12) {
@@ -78,6 +81,9 @@ struct OverviewPage: View {
             }
         }
     }
+
+    /// Shown only while the machine has been cleared for a heavy job.
+    private var placeholderForYield: some View { EmptyView() }
 
     /// Identity first: which machine this is, and what it is made of.
     private var machineCard: some View {
@@ -663,6 +669,42 @@ struct DiskPage: View {
                     (L("Lifetime read", "累计读取"), formatBytes(disk.totalRead)),
                     (L("Lifetime written", "累计写入"), formatBytes(disk.totalWritten)),
                 ])
+            }
+        }
+    }
+}
+
+/// Active while a heavy workload has the machine to itself.
+struct YieldBanner: View {
+    let session: YieldSession
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Card {
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: "arrow.down.forward.and.arrow.up.backward")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("Cleared the way for \(session.trigger)",
+                           "已为 \(session.trigger) 让路"))
+                        .font(.ui(12.5, .semibold)).foregroundStyle(Color.ink)
+                    Text(L("\(session.yielded.count) idle programs on efficiency cores · \(formatMinutes(Int(session.duration / 60))) so far",
+                           "\(session.yielded.count) 个闲置程序已移到能效核 · 已运行 \(formatMinutes(Int(session.duration / 60)))"))
+                        .font(.ui(10.5)).foregroundStyle(Color.inkMuted)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(model.temperatureText(model.state.vitals.sensors.cpu))
+                        .font(.figure(15, .medium))
+                        .foregroundStyle(model.coreTemperatureTint(
+                            model.state.vitals.sensors.cpu))
+                    if session.minutesThrottled >= 0.5 {
+                        Text(L("throttled \(formatMinutes(Int(session.minutesThrottled)))",
+                               "已降频 \(formatMinutes(Int(session.minutesThrottled)))"))
+                            .font(.ui(9.5)).foregroundStyle(Color.alertTint)
+                    }
+                }
             }
         }
     }

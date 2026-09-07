@@ -80,6 +80,8 @@ struct EngineState: Equatable {
     var performanceLevelName = "Performance"
     var coreNames: [Int: String] = [:]
     var machine = MachineInfo()
+    /// Set while the machine has been cleared for a heavy job.
+    var yielding: YieldSession?
     /// Machine-wide history, oldest first, for the load chart.
     var cpuTrail: [Double] = []
     var memoryTrail: [Double] = []

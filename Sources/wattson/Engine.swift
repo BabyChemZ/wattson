@@ -62,6 +62,10 @@ final class Engine: @unchecked Sendable {
     /// rather than every second.
     private let awayLog = AwayLog()
     private var currentAway: AwaySession?
+    private var currentYield: YieldSession?
+    /// Processes stood down for the current yield, to be restored after.
+    private var yieldedPIDs: Set<Int32> = []
+    private let yieldLog = YieldLog()
     private var lastVitalsAt: Date?
 
     private var lastAlert: [String: Date] = [:]
@@ -156,6 +160,7 @@ final class Engine: @unchecked Sendable {
             $0.efficiencyCoreCount = self.vitalsSampler.cores.efficiencyCoreCount
             $0.performanceLevelName = self.vitalsSampler.cores.performanceLevelName
             $0.machine = self.machine
+            $0.yielding = self.currentYield
             if $0.coreNames.isEmpty, !cores.isEmpty {
                 $0.coreNames = Dictionary(uniqueKeysWithValues: cores.map {
                     ($0.index, self.vitalsSampler.cores.name(for: $0.index))
@@ -498,6 +503,10 @@ final class Engine: @unchecked Sendable {
         let liveCommands = Set(deltas.lazy
             .filter { Lifelines.isProtected($0.command) == nil }
             .map(\.command))
+        if config.yieldForHeavyWork {
+            updateYield(rows: rows, deltas: deltas)
+        }
+
         let trained = liveCommands.filter {
             (store.baseline(for: $0)?.cpuPercent.count ?? 0) >= config.minimumSamples
         }.count
@@ -541,6 +550,59 @@ final class Engine: @unchecked Sendable {
         mutate(&state)
         onUpdate?(state)
     }
+
+    // MARK: - Yielding to heavy work
+
+    /// Clear the way when an inference runtime appears, and put everything back
+    /// when it leaves.
+    private func updateYield(rows: [ProcessRow], deltas: [ProcDelta]) {
+        let workload = deltas.first { HeavyWorkload.matches($0.command) }
+
+        if let workload, currentYield == nil {
+            var session = YieldSession(startedAt: Date(), trigger: workload.command)
+
+            let planner = YieldPlanner(config: config)
+            let candidates = planner.candidates(from: rows) { self.store.baseline(for: $0) }
+            for candidate in candidates {
+                guard manual.demote(pid: candidate.pid) else { continue }
+                yieldedPIDs.insert(candidate.pid)
+                session.yielded.append(candidate.command)
+            }
+
+            currentYield = session
+            log.write("yielding to \(workload.command): stood down "
+                    + "\(session.yielded.count) idle programs")
+            return
+        }
+
+        guard var session = currentYield else { return }
+
+        if workload == nil {
+            // The job is gone; put everything back exactly as it was.
+            for pid in yieldedPIDs { _ = manual.restorePriority(pid: pid) }
+            yieldedPIDs.removeAll()
+            session.endedAt = Date()
+            currentYield = nil
+            if session.duration > 20 { yieldLog.record(session) }
+            log.write(String(format: "yield ended after %.0fs — peak CPU %.0f°C, "
+                             + "throttled %.1f min",
+                             session.duration, session.peakCPUTemperature,
+                             session.minutesThrottled))
+            return
+        }
+
+        // Still running: keep the record of what the job cost.
+        session.peakCPUTemperature = max(session.peakCPUTemperature,
+                                         state.vitals.sensors.cpu ?? 0)
+        session.peakMemoryFraction = max(session.peakMemoryFraction,
+                                         state.vitals.memUsedFraction)
+        if state.vitals.thermal == .serious || state.vitals.thermal == .critical {
+            session.minutesThrottled += config.tickSeconds / 60
+        }
+        currentYield = session
+    }
+
+    func yieldSessions() -> [YieldSession] { queue.sync { yieldLog.sessions } }
 
     /// Energy Impact integrated over the interval, per program. This is what
     /// answers "who drained the battery while I was out" — a question the

@@ -5,12 +5,14 @@ struct WattsonApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
+        // The watchdog's own item: status, and the way into everything else.
         MenuBarExtra {
             PanelView(model: model)
         } label: {
             MenuBarLabel(model: model)
         }
         .menuBarExtraStyle(.window)
+
     }
 }
 

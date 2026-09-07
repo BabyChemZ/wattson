@@ -59,6 +59,54 @@ final class AppModel: ObservableObject {
         return anomalies + rest
     }
 
+    /// Rows for the panel, ranked by whichever metric is selected. Anomalies
+    /// are not forced to the top: someone who sorted by memory meant by memory.
+    func panelRows(by metric: PanelMetric, limit: Int = 10) -> [ProcessRow] {
+        let sorted: [ProcessRow]
+        switch metric {
+        case .cpu:
+            sorted = state.rows.filter { $0.cpuPercent >= 0.4 }
+                .sorted { $0.cpuPercent > $1.cpuPercent }
+        case .memory:
+            sorted = state.rows.filter { $0.memBytes > 50_000_000 }
+                .sorted { $0.memBytes > $1.memBytes }
+        case .energy:
+            sorted = state.rows.filter { $0.energyImpact > 0 }
+                .sorted { $0.energyImpact > $1.energyImpact }
+        case .events:
+            sorted = []
+        }
+        return Array(sorted.prefix(limit))
+    }
+
+    /// The value shown on the right of a panel row, for the chosen metric.
+    func panelValue(_ row: ProcessRow, metric: PanelMetric) -> String {
+        switch metric {
+        case .cpu:    return String(format: "%.0f%%", row.cpuPercent)
+        case .memory: return formatBytes(row.memBytes)
+        case .energy: return String(format: "%.0f", row.energyImpact)
+        case .events: return ""
+        }
+    }
+
+    /// The secondary value — its usual level, where that means something.
+    func panelSubvalue(_ row: ProcessRow, metric: PanelMetric) -> String? {
+        switch metric {
+        case .cpu:    return row.usualCPUPercent.map { String(format: "%.0f%%", $0) }
+        default:      return nil
+        }
+    }
+
+    /// The readings folded into the main slot when compact.
+    var compactReadings: String {
+        guard config.menuBarCompact else { return "" }
+        return config.menuBarModules.map { module in
+            config.menuBarLabels
+                ? "\(module.tag)\u{2009}\(module.value(state))"
+                : module.value(state)
+        }.joined(separator: "  ")
+    }
+
     var learningTail: String {
         state.learningPrograms > 0
             ? L("+\(state.learningPrograms) learning", "+\(state.learningPrograms) 学习中")
@@ -473,6 +521,28 @@ final class AppModel: ObservableObject {
     func quit() {
         engine.flush()
         NSApplication.shared.terminate(nil)
+    }
+
+    /// Whether a module occupies a menu bar slot. Toggling it inserts or
+    /// removes the item live.
+    func moduleBinding(_ module: MenuBarModule) -> Binding<Bool> {
+        Binding(
+            get: { !self.config.menuBarCompact
+                   && self.config.menuBarModules.contains(module) },
+            set: { shown in
+                // In compact mode `get` already returns false for everything,
+                // and SwiftUI writes that back when it removes the item — which
+                // would delete the user's choices rather than merely hiding
+                // them. The selection has to survive the mode it is not in.
+                guard !self.config.menuBarCompact else { return }
+                if shown {
+                    if !self.config.menuBarModules.contains(module) {
+                        self.config.menuBarModules.append(module)
+                    }
+                } else {
+                    self.config.menuBarModules.removeAll { $0 == module }
+                }
+            })
     }
 
     func openSettings() {

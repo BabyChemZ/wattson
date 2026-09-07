@@ -160,3 +160,33 @@ enum ProcessSort: String, CaseIterable {
         }
     }
 }
+
+
+/// What the menu bar panel is currently ranking by.
+///
+/// The panel used to show one list ordered by CPU, which answers one question
+/// out of three. Whichever readings someone put in the menu bar are the ones
+/// they care about, so the list should be able to follow any of them.
+enum PanelMetric: String, CaseIterable, Identifiable {
+    case cpu, memory, energy, events
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .cpu:    return L("CPU", "CPU")
+        case .memory: return L("Memory", "内存")
+        case .energy: return L("Energy", "能耗")
+        case .events: return L("Events", "事件")
+        }
+    }
+
+    /// Column heading for the value on the right.
+    var valueHeading: String {
+        switch self {
+        case .cpu:    return L("NOW · USUAL", "当前 · 常态")
+        case .memory: return L("RESIDENT", "占用")
+        case .energy: return L("IMPACT", "影响")
+        case .events: return ""
+        }
+    }
+}

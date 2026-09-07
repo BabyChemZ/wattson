@@ -46,10 +46,16 @@ struct Config: Codable {
     /// workload — model inference, for now — is running.
     var yieldForHeavyWork = true
 
-    /// Which live readings to show in the menu bar itself.
-    var menuBarMetrics: [MenuBarMetric] = [.cpu, .memory]
+    /// Which readings get their own slot in the menu bar.
+    var menuBarModules: [MenuBarModule] = [.cpu, .memory]
     /// Prefix each reading with a one-letter tag, so several are tellable apart.
     var menuBarLabels = true
+    /// Put every reading in one slot instead of one each.
+    ///
+    /// Separate slots are better when there is room — each opens its own panel
+    /// — but the menu bar on a notched laptop runs out of width quickly, and
+    /// macOS hides whatever does not fit without saying so.
+    var menuBarCompact = false
     /// Warn when these are exceeded. Nil disables the alert.
     var alertCPUPercent: Double? = nil
     var alertMemoryPercent: Double? = 92
@@ -105,8 +111,9 @@ struct Config: Codable {
         dryRun = value(.dryRun, fallback.dryRun)
         yieldForHeavyWork = value(.yieldForHeavyWork, fallback.yieldForHeavyWork)
         neverTouch = value(.neverTouch, fallback.neverTouch)
-        menuBarMetrics = value(.menuBarMetrics, fallback.menuBarMetrics)
+        menuBarModules = value(.menuBarModules, fallback.menuBarModules)
         menuBarLabels = value(.menuBarLabels, fallback.menuBarLabels)
+        menuBarCompact = value(.menuBarCompact, fallback.menuBarCompact)
         hasShownWindow = value(.hasShownWindow, fallback.hasShownWindow)
         language = value(.language, fallback.language)
         localNotifications = value(.localNotifications, fallback.localNotifications)

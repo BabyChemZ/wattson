@@ -193,27 +193,26 @@ extension SettingsView {
     /// Which live readings ride in the menu bar.
     var menuBar: some View {
         Card(title: L("Menu bar", "菜单栏")) {
-            Text(L("Readings shown next to the icon.", "显示在图标旁边的实时读数。"))
+            Text(L("Each gets its own slot, with its own panel. macOS hides whatever will not fit — a notched laptop runs out of width fast.",
+                   "每项占据独立位置，各有自己的面板。放不下的会被 macOS 直接隐藏 —— 带刘海的机型宽度很快就用完。"))
                 .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Toggle(isOn: $model.config.menuBarCompact) {
+                Text(L("Combine into one slot", "合并到一个位置"))
+                    .font(.ui(12)).foregroundStyle(Color.ink)
+            }
+            .toggleStyle(.switch)
+            .tint(Color.accent)
             Toggle(isOn: $model.config.menuBarLabels) {
                 Text(L("Label each reading", "每项带标签"))
                     .font(.ui(12)).foregroundStyle(Color.ink)
             }
             .toggleStyle(.switch)
             .tint(Color.accent)
-            ForEach(MenuBarMetric.allCases) { metric in
-                Toggle(isOn: Binding(
-                    get: { model.config.menuBarMetrics.contains(metric) },
-                    set: { on in
-                        if on {
-                            if !model.config.menuBarMetrics.contains(metric) {
-                                model.config.menuBarMetrics.append(metric)
-                            }
-                        } else {
-                            model.config.menuBarMetrics.removeAll { $0 == metric }
-                        }
-                    })) {
-                    Text(metric.title).font(.ui(12)).foregroundStyle(Color.ink)
+            ForEach(MenuBarModule.allCases) { module in
+                Toggle(isOn: model.moduleBinding(module)) {
+                    Text(module.title).font(.ui(12)).foregroundStyle(Color.ink)
                 }
                 .toggleStyle(.switch)
                 .tint(Color.accent)

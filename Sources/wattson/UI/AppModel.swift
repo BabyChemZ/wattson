@@ -380,6 +380,20 @@ final class AppModel: ObservableObject {
         _ = engine.terminateNow(pid: row.pid)
     }
 
+    /// Quit an orphaned process, asking first.
+    func confirmTerminate(_ orphan: Orphan) {
+        let alert = NSAlert()
+        alert.messageText = L("Quit \(orphan.displayName)?", "结束 \(orphan.displayName)？")
+        alert.informativeText = L(
+            "Started by \(orphan.startedBy), which has already exited.",
+            "由 \(orphan.startedBy) 启动，而它已经退出。")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("Quit", "结束"))
+        alert.addButton(withTitle: L("Cancel", "取消"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        _ = engine.terminateNow(pid: orphan.pid)
+    }
+
     /// Add to the never-touch list so the watchdog stops considering it.
     func exclude(_ row: ProcessRow) {
         guard !config.neverTouch.contains(row.command) else { return }

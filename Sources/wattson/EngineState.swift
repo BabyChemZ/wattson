@@ -84,6 +84,8 @@ struct EngineState: Equatable {
     var inference: InferenceSession?
     /// Conditions worth telling the user about, right now.
     var inferenceWarnings: [InferenceWarning] = []
+    /// Processes still running after the agent that started them exited.
+    var orphans: [Orphan] = []
     /// Machine-wide history, oldest first, for the load chart.
     var cpuTrail: [Double] = []
     var memoryTrail: [Double] = []

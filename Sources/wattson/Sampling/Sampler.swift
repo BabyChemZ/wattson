@@ -11,7 +11,7 @@ struct Sampler {
     var topProcessCount = 50
 
     private static let topColumns =
-        "pid,command,time,csw,idlew,sysmach,sysbsd,instrs,cycles,mem,power"
+        "pid,command,ppid,time,csw,idlew,sysmach,sysbsd,instrs,cycles,mem,power"
 
     func snapshot() -> Snapshot? {
         guard let (processTable, vitals) = sampleProcesses() else { return nil }
@@ -70,7 +70,7 @@ struct Sampler {
     /// whatever is left in the middle.
     static func parseTopRow(_ line: String) -> ProcSample? {
         let fields = line.split(separator: " ", omittingEmptySubsequences: true)
-        let statColumnCount = 9
+        let statColumnCount = 10
         guard fields.count >= statColumnCount + 2,
               let pid = Int32(fields[0]) else { return nil }
 
@@ -78,21 +78,24 @@ struct Sampler {
         let stats = fields[statsStart...].map(String.init)
         let command = fields[1..<statsStart].joined(separator: " ")
 
-        guard let cpuTime = Parsing.cpuTime(stats[0]),
-              let csw = Parsing.counter(stats[1]),
-              let idlew = Parsing.counter(stats[2]),
-              let sysmach = Parsing.counter(stats[3]),
-              let sysbsd = Parsing.counter(stats[4]),
-              let instrs = Parsing.counter(stats[5]),
-              let cycles = Parsing.counter(stats[6]),
-              let mem = Parsing.memory(stats[7]) else { return nil }
+        guard let ppid = Int32(stats[0].trimmingCharacters(
+                in: CharacterSet(charactersIn: "+-"))),
+              let cpuTime = Parsing.cpuTime(stats[1]),
+              let csw = Parsing.counter(stats[2]),
+              let idlew = Parsing.counter(stats[3]),
+              let sysmach = Parsing.counter(stats[4]),
+              let sysbsd = Parsing.counter(stats[5]),
+              let instrs = Parsing.counter(stats[6]),
+              let cycles = Parsing.counter(stats[7]),
+              let mem = Parsing.memory(stats[8]) else { return nil }
         // `power` is the same composite Activity Monitor calls Energy Impact:
         // CPU plus idle wakeups plus GPU, weighted the way the OS weights them.
-        let power = Double(stats[8].trimmingCharacters(
+        let power = Double(stats[9].trimmingCharacters(
             in: CharacterSet(charactersIn: "+-"))) ?? 0
 
         return ProcSample(
             pid: pid,
+            parentPID: ppid,
             command: command,
             cumulativeCPUSeconds: cpuTime,
             memBytes: mem,

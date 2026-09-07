@@ -69,6 +69,8 @@ final class Engine: @unchecked Sendable {
     private var inferenceStartSwap: UInt64 = 0
     private var lastRuntimeMemory: UInt64 = 0
     private var raisedWarnings: Set<String> = []
+    private var agentBooks = AgentBookkeeping()
+    private var reportedOrphans: Set<Int32> = []
     private var lastVitalsAt: Date?
 
     private var lastAlert: [String: Date] = [:]
@@ -507,6 +509,7 @@ final class Engine: @unchecked Sendable {
             .filter { Lifelines.isProtected($0.command) == nil }
             .map(\.command))
         updateInference(rows: rows, deltas: deltas)
+        updateOrphans(deltas: deltas)
 
         let trained = liveCommands.filter {
             (store.baseline(for: $0)?.cpuPercent.count ?? 0) >= config.minimumSamples
@@ -550,6 +553,34 @@ final class Engine: @unchecked Sendable {
     private func publish(_ mutate: (inout EngineState) -> Void) {
         mutate(&state)
         onUpdate?(state)
+    }
+
+    // MARK: - Agent leftovers
+
+    /// Notice processes an agent started and then abandoned.
+    ///
+    /// This is a failure ordinary software does not have: a program you closed
+    /// is gone, but an agent's test runner or dev server outlives the session
+    /// that spawned it, with no window to close and nobody watching it.
+    private func updateOrphans(deltas: [ProcDelta]) {
+        let tree = ProcessTree(deltas)
+        agentBooks.observe(deltas, tree: tree)
+        let found = agentBooks.orphans(in: deltas, tree: tree,
+                                       minimumCPU: config.cpuFloorPercent)
+
+        for orphan in found where !reportedOrphans.contains(orphan.pid) {
+            reportedOrphans.insert(orphan.pid)
+            log.write("orphan: \(orphan.command) [\(orphan.pid)] left by "
+                    + "\(orphan.startedBy), \(Int(orphan.cpuPercent))% CPU")
+            notifier.send(
+                title: L("\(orphan.displayName) was left running",
+                         "\(orphan.displayName) 被遗留在后台"),
+                body: L("Started by \(orphan.startedBy), which has since exited. Still using \(Int(orphan.cpuPercent))% CPU.",
+                        "由已退出的 \(orphan.startedBy) 启动，目前仍占用 \(Int(orphan.cpuPercent))% CPU。"))
+        }
+        let live = Set(found.map(\.pid))
+        reportedOrphans = reportedOrphans.filter { live.contains($0) }
+        publish { $0.orphans = found }
     }
 
     // MARK: - Inference

@@ -9,6 +9,10 @@ import Foundation
 ///                     frames. Must NOT be differenced again.
 struct ProcSample {
     let pid: Int32
+    /// Parent process. When a parent exits macOS reparents its children to
+    /// launchd, so a ppid of 1 on something that was started by an agent is
+    /// how an orphan announces itself.
+    let parentPID: Int32
     let command: String
 
     let cumulativeCPUSeconds: Double
@@ -44,6 +48,7 @@ struct Snapshot {
 /// about this, never about an instantaneous CPU percentage.
 struct ProcDelta {
     let pid: Int32
+    let parentPID: Int32
     let command: String
     let interval: TimeInterval
 
@@ -124,6 +129,7 @@ extension Snapshot {
 
             return ProcDelta(
                 pid: pid,
+                parentPID: now.parentPID,
                 command: now.command,
                 interval: interval,
                 cpuSeconds: cpuSeconds,

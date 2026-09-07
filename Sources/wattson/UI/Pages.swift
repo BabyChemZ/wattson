@@ -10,6 +10,9 @@ struct OverviewPage: View {
             if let session = model.state.inference {
                 InferenceBanner(session: session, model: model)
             }
+            if !model.state.orphans.isEmpty {
+                OrphanCard(orphans: model.state.orphans, model: model)
+            }
             machineCard
 
             HStack(spacing: 12) {
@@ -699,6 +702,48 @@ struct InferenceBanner: View {
                     Label(model.state.inferenceWarnings[0].title,
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.ui(10.5, .medium)).foregroundStyle(Color.alertTint)
+                }
+            }
+        }
+    }
+}
+
+/// Processes an agent started and then walked away from.
+struct OrphanCard: View {
+    let orphans: [Orphan]
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.uturn.left.circle.fill")
+                        .font(.system(size: 14)).foregroundStyle(Color.alertTint)
+                    Text(L("Left running by an agent", "Agent 遗留的进程"))
+                        .font(.ui(12.5, .semibold)).foregroundStyle(Color.ink)
+                    Spacer()
+                }
+                ForEach(orphans.prefix(4)) { orphan in
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(orphan.displayName)
+                                .font(.ui(11.5)).foregroundStyle(Color.ink)
+                                .lineLimit(1).truncationMode(.middle)
+                            Text(L("started by \(orphan.startedBy) · stranded \(formatMinutes(Int(orphan.strandedFor / 60)))",
+                                   "由 \(orphan.startedBy) 启动 · 已遗留 \(formatMinutes(Int(orphan.strandedFor / 60)))"))
+                                .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
+                        }
+                        Spacer()
+                        Text(String(format: "%.0f%%", orphan.cpuPercent))
+                            .font(.figure(11.5, .medium)).foregroundStyle(Color.alertTint)
+                        Text(formatBytes(orphan.memBytes))
+                            .font(.figure(10.5)).foregroundStyle(Color.inkMuted)
+                            .frame(width: 62, alignment: .trailing)
+                        Button(L("Quit", "结束")) { model.confirmTerminate(orphan) }
+                            .buttonStyle(.plain)
+                            .font(.ui(10.5, .medium)).foregroundStyle(Color.accent)
+                    }
+                    .padding(.vertical, 3)
                 }
             }
         }

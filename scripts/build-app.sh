@@ -5,15 +5,23 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP="dist/Wattson.app"
-VERSION="0.1.0"
+VERSION="${WATTSON_VERSION:-0.1.1}"
+SIGNING_IDENTITY="${WATTSON_SIGNING_IDENTITY:--}"
+ARCH="${WATTSON_ARCH:-arm64}"
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$ARCH" != arm64 ]]; then
+    echo "Use a numeric x.y.z version; this preview supports arm64 only." >&2
+    exit 1
+fi
 
 echo "==> building"
-swift build -c release
+swift build -c release --arch "$ARCH"
+BIN_DIR="$(swift build -c release --arch "$ARCH" --show-bin-path)"
 
 echo "==> assembling bundle"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/wattson "$APP/Contents/MacOS/Wattson"
+cp "$BIN_DIR/wattson" "$APP/Contents/MacOS/Wattson"
+cp LICENSE "$APP/Contents/Resources/LICENSE"
 
 echo "==> icon"
 rm -rf dist/Wattson.iconset && mkdir -p dist/Wattson.iconset
@@ -42,7 +50,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signature so Gatekeeper treats it as a stable identity across launches.
-codesign --force --deep --sign - "$APP" 2>/dev/null || true
+# Ad-hoc builds are local previews, not Gatekeeper-approved public releases.
+if [[ "$SIGNING_IDENTITY" == - ]]; then
+    codesign --force --sign - "$APP"
+else
+    codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP"
+fi
+codesign --verify --strict "$APP"
 
 echo "==> done: $APP"

@@ -103,8 +103,8 @@ struct LiveInferenceCard: View {
                 }
 
                 if session.programsYielded > 0 {
-                    Text(L("\(session.programsYielded) idle programs moved to efficiency cores",
-                           "已将 \(session.programsYielded) 个闲置程序移到能效核"))
+                    Text(L("\(session.programsYielded) idle programs given background priority",
+                           "已将 \(session.programsYielded) 个闲置程序降低优先级"))
                         .font(.ui(10)).foregroundStyle(Color.inkFaint)
                 }
             }

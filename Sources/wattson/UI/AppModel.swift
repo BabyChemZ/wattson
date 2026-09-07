@@ -701,7 +701,7 @@ final class AppModel: ObservableObject {
         ]
         state.events = [
                 Event(at: Date().addingTimeInterval(-240), command: "verge-mihomo",
-                      headline: L("moved to efficiency cores", "已移到能效核"),
+                      headline: L("background priority requested", "已降低优先级"),
                       reasons: [L("CPU 402% vs its 47-day norm of 1.5%",
                                   "CPU 402%，而它 47 天来的常态是 1.5%"),
                                 L("network throughput collapsed to 0% of normal",
@@ -736,12 +736,12 @@ final class AppModel: ObservableObject {
                          command: "verge-mihomo",
                          summary: L("CPU 402% — matches none of its usual states (2% / 45%)",
                                     "CPU 402% —— 不属于它已知的任何状态（2% / 45%）"),
-                         action: L("moved to efficiency cores", "已移到能效核")),
+                         action: L("background priority requested", "已降低优先级")),
             AwayIncident(at: Date().addingTimeInterval(-6 * 3600 - 1500),
                          command: "verge-mihomo",
-                         summary: L("still pegged after 5 min on efficiency cores",
+                         summary: L("still busy after 5 min at background priority",
                                     "降核 5 分钟后仍未平息"),
-                         action: L("restarted", "已重启")),
+                         action: L("needs your review", "待你检查")),
         ]
         var older = AwaySession(startedAt: Date().addingTimeInterval(-32 * 3600))
         older.endedAt = Date().addingTimeInterval(-25 * 3600)

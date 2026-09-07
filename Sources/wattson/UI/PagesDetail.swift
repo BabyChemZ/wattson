@@ -372,7 +372,7 @@ struct ProcessActions: View {
             Text(L("Protected — Wattson never acts on this",
                    "受保护 —— Wattson 不会处置它"))
         } else {
-            Button(L("Move to efficiency cores", "移到能效核")) { model.demote(row) }
+            Button(L("Lower priority", "降低优先级")) { model.demote(row) }
             Button(L("Restore normal priority", "恢复正常优先级")) { model.restore(row) }
             Divider()
             if model.isExcluded(row) {

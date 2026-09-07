@@ -29,8 +29,8 @@
 
 ## Why
 
-Every process monitor tells you which program is using the most CPU. **None can
-tell you whether it should be.**
+Resource monitors show which program uses the most CPU. Wattson also compares
+**that program's own history** to help identify unusual behavior.
 
 You leave the Mac running something long and come back to a machine that has
 been at 90°C for nine hours, because a background daemon wedged itself in a
@@ -58,8 +58,8 @@ runaway and the useful process look identical:
 
 Baselines are **clustered, not averaged** — most programs have several honest
 modes. An editor idles near zero and compiles near a full core; a single median
-lands in the empty gap between them and calls both states abnormal. On this
-machine, **43 of 45** modelled programs turned out to have more than one normal.
+lands in the empty gap between them and calls both states abnormal. The current model fits up to three states; real-workload false-positive rates
+still need validation.
 
 | Program's history | Sees 100% today | Verdict |
 |:---|:---|:---|
@@ -220,7 +220,8 @@ chart to name the column — average, peak, and the time it covers.
 
 Gentlest first.
 
-**1 · Demote to efficiency cores** — `taskpolicy -b`. Measured on an M5:
+**1 · Request background priority** — `taskpolicy -b`. macOS chooses core placement;
+this is not core affinity or a fixed CPU quota. An early single-M5 measurement:
 
 ```
 normal priority     4381 Miter/s
@@ -228,11 +229,14 @@ taskpolicy -b        180 Miter/s     ← 24× slower
 taskpolicy -B       4367 Miter/s     ← fully restored
 ```
 
-The process keeps running, keeps its connections, loses no state, and is
-restored the moment it behaves again.
+The process keeps running. Wattson journals its own priority changes and attempts
+to undo them after recovery, missing samples, disabling actions, or shutdown.
+Failed restores remain pending and are retried. Background policy may also affect
+I/O and network scheduling.
 
-**2 · Restart** — only if demotion hasn't settled it after several minutes, and
-at most twice an hour.
+**2 · Report for review** — if lowering priority does not settle it, ask the user
+to investigate. Wattson never automatically terminates or restarts processes.
+The UI offers a separately confirmed manual Quit action.
 
 Before intervening, `sample` is run and the stack saved. The difference between
 *"Clash used a lot of CPU while you were out"* and *"Clash was wedged in this
@@ -274,23 +278,29 @@ not *"this work is pointless"* but *"this program is not acting like itself."*
 ## Install
 
 <p align="center">
-  <a href="https://github.com/BabyChemZ/wattson/releases/latest">
-    <img src="https://img.shields.io/badge/Download-Wattson.zip-0071e3?style=for-the-badge&logo=apple&logoColor=white">
+  <a href="https://github.com/BabyChemZ/wattson/releases">
+    <img src="https://img.shields.io/badge/Preview-Releases-0071e3?style=for-the-badge&logo=apple&logoColor=white">
   </a>
 </p>
 
-**1.2 MB · macOS 13+ · Apple Silicon recommended**
+**Preview for Apple Silicon (arm64). macOS 13 is the build target; current
+physical-machine validation covers one M5 running macOS 26.**
 
-Unzip, drag to Applications, then — because the build is unsigned — clear the
-quarantine flag before first launch:
+Public source does not mean an installer has been released. Check the Releases
+page for actual assets. Maintainers can run `./scripts/package-release.sh` to
+produce `dist/Wattson-0.1.1-arm64-preview.zip` and its SHA-256 checksum.
 
-```sh
-xattr -dr com.apple.quarantine /Applications/Wattson.app
-```
+Developer ID signing and notarization are not required for small-scale preview
+distribution. Unzip, drag `Wattson.app` into Applications, and try opening it. If
+macOS cannot verify the developer, use System Settings → Privacy & Security →
+Open Anyway. Managed Macs may restrict this exception. See [Apple's instructions](https://support.apple.com/en-us/102445).
 
-Without that macOS refuses to open it and says the app is damaged, which it is
-not. Right-click → **Open** → **Open** works too. Notarising it away needs a
-paid Apple developer account.
+If macOS reports damage, re-download and verify the published checksum first.
+Do not assume that every warning is a false positive. Preview builds have an
+ad-hoc local signature, which is not Developer ID signing or notarization.
+
+Keep the default observe-only mode for the first evaluation. See the
+[release and product assessment (Chinese)](docs/RELEASE_READINESS.zh-CN.md).
 
 ### Or build it yourself
 
@@ -329,8 +339,10 @@ wattson watch                  # run the watchdog in the foreground
   inference and agent work.
 - **Tested on one machine** — M5 MacBook Air, 24 GB, macOS 26. Intel is
   untested and parts won't work there.
-- **Unsigned** — notarisation needs a paid developer account.
-- **No automated tests yet.**
+- **No Developer ID signature or notarization** — downloaded previews need manual approval on first use.
+- **Regression checks** — `./scripts/test.sh`; then `swift build && python3 scripts/smoke-test.py` for isolated singleton and SIGTERM persistence checks. Full Xcode is not required.
+- **Inference and energy estimates** — GPU, swap, and thermal pressure are machine-wide signals. Energy Impact is a relative index, not measured task joules or proof that a model caused an OOM.
+- **Some screenshots show earlier behavior** — current automatic actions never terminate or restart processes.
 
 ---
 

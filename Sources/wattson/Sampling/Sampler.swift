@@ -62,7 +62,8 @@ struct Sampler {
 
         var result: [Int32: ProcSample] = [:]
         for line in lines[lines.index(after: lastHeader)...] {
-            if let sample = Self.parseTopRow(String(line)) {
+            if var sample = Self.parseTopRow(String(line)) {
+                sample.identity = ProcessIdentity.read(pid: sample.pid)
                 result[sample.pid] = sample
             }
         }

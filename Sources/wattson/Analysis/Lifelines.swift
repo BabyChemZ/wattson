@@ -32,7 +32,7 @@ enum Lifelines {
     ]
 
     /// Never let the watchdog act on itself.
-    static let own: Set<String> = ["wattson"]
+    static let own: Set<String> = ["wattson", "Wattson"]
 
     static func isProtected(_ command: String) -> ProtectionReason? {
         if own.contains(command) { return .own }

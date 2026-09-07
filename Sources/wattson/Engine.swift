@@ -4,13 +4,13 @@ import AppKit
 /// Where a misbehaving process sits in the escalation ladder.
 enum Stage: String {
     case watching     // flagged, not yet sustained long enough to act
-    case demoted      // confined to efficiency cores
-    case restarted    // asked to exit after demotion failed to settle it
+    case demoted      // background scheduling policy requested
     case exhausted    // nothing left to try; handed to the human
 }
 
 struct Incident {
     let command: String
+    let identity: ProcessIdentity
     let startedAt: Date
     var anomalousTicks: Int
     var stage: Stage
@@ -36,6 +36,8 @@ final class Engine: @unchecked Sendable {
     private let log = Log()
 
     private let queue = DispatchQueue(label: "com.wattson.engine")
+    private let queueKey = DispatchSpecificKey<Bool>()
+    private let priorities = PriorityController()
     /// The machine's own readings refresh on their own short timer; only the
     /// process table waits on `top`.
     private var vitalsTimer: DispatchSourceTimer?
@@ -73,7 +75,7 @@ final class Engine: @unchecked Sendable {
     private var currentAway: AwaySession?
     private var currentInference: InferenceSession?
     /// Processes stood down for the current run, to be restored after.
-    private var yieldedPIDs: Set<Int32> = []
+    private var yieldedProcesses: Set<ProcessIdentity> = []
     private let inferenceLog = InferenceLog()
     private var inferenceStartSwap: UInt64 = 0
     private var lastRuntimeMemory: UInt64 = 0
@@ -88,9 +90,26 @@ final class Engine: @unchecked Sendable {
     private var reportedOrphans: Set<Int32> = []
     private var lastVitalsAt: Date?
 
+    /// How long a reading must stay past its limit before it is worth saying
+    /// anything about. Separate from the cooldown, which governs how often a
+    /// genuine alert may repeat.
+    ///
+    /// CPU gets the longer window because it is the noisiest: a build, a
+    /// launch, or an indexing pass will hold the machine at 90% for a minute
+    /// and mean nothing by it. Memory and temperature move slowly enough that
+    /// a minute past the line is already a real condition.
+    private static let alertSustainCPU: TimeInterval = 180
+    private static let alertSustain: TimeInterval = 60
+    /// How long a leftover process must stay stranded and busy to be worth
+    /// naming.
+    private static let orphanSustain: TimeInterval = 120
+    /// When each threshold was first crossed in the current run of readings.
+    private var alertCrossedAt: [String: Date] = [:]
+    /// pid -> when it was first seen stranded and above the CPU floor.
+    private var orphanBusySince: [Int32: Date] = [:]
+    private var inferencePressureSince: Date?
     private var lastAlert: [String: Date] = [:]
     private static let alertCooldown: TimeInterval = 1800
-    private var restartTimes: [String: [Date]] = [:]
     private var ticksSinceSave = 0
     private var tickCount = 0
     /// The first samples run close together. A 30s tick means an empty window
@@ -111,12 +130,22 @@ final class Engine: @unchecked Sendable {
         self.engine = VerdictEngine(config: config)
         self.actions = Actions(dryRun: config.dryRun)
         self.notifier = Notifier(config: config)
+        queue.setSpecific(key: queueKey, value: true)
     }
 
     /// Apply settings changed from the UI without losing what has been learned.
     func update(config newConfig: Config) {
         queue.async {
             let intervalChanged = newConfig.tickSeconds != self.config.tickSeconds
+            if newConfig.dryRun != self.config.dryRun || newConfig.neverTouch != self.config.neverTouch {
+                self.priorities.releaseAll(reason: .anomaly)
+                self.priorities.releaseAll(reason: .inference)
+                self.incidents.removeAll()
+                self.yieldedProcesses.removeAll()
+            } else if !newConfig.yieldForHeavyWork && self.config.yieldForHeavyWork {
+                self.priorities.releaseAll(reason: .inference)
+                self.yieldedProcesses.removeAll()
+            }
             self.config = newConfig
             self.engine = VerdictEngine(config: newConfig)
             self.actions = Actions(dryRun: newConfig.dryRun)
@@ -140,6 +169,8 @@ final class Engine: @unchecked Sendable {
             isSecondary = true
             return
         }
+        // Recover changes journaled by an earlier instance before sampling anew.
+        priorities.releaseAll()
 
         // Keep sampling on a fixed cadence in the background. Without this,
         // App Nap throttles the timers of a menu-bar-only app and the readings
@@ -173,13 +204,13 @@ final class Engine: @unchecked Sendable {
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil, queue: nil) { [weak self] _ in
-            self?.flush()
+            self?.stop()
         }
         // Covers a SIGTERM from launchd or the command line, where no
         // notification is delivered at all.
         let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: queue)
         source.setEventHandler { [weak self] in
-            self?.flush()
+            self?.stop()
             exit(0)
         }
         signal(SIGTERM, SIG_IGN)
@@ -189,10 +220,16 @@ final class Engine: @unchecked Sendable {
 
     /// Write everything learned to disk, now.
     func flush() {
-        queue.sync {
+        onEngineQueue {
+            guard !isSecondary else { return }
             store.save()
             ticksSinceSave = 0
         }
+    }
+
+    private func onEngineQueue(_ work: () -> Void) {
+        if DispatchQueue.getSpecific(key: queueKey) == true { work() }
+        else { queue.sync(execute: work) }
     }
 
     /// The fast pipeline. Runs every second, touches nothing that shells out.
@@ -341,26 +378,58 @@ final class Engine: @unchecked Sendable {
             notifier.send(title: title, body: body)
         }
 
+        /// Whether a reading has been past its limit long enough to mean
+        /// something, resetting the moment it falls back.
+        ///
+        /// Checked every second, so alerting the instant a line is crossed
+        /// reports the ordinary: the machine touches 80% every time it
+        /// compiles something or opens an application, and by the time the
+        /// notification is read the menu bar is back at 20%. An alert that
+        /// disagrees with what the user can see is an alert they learn to
+        /// ignore. Must be called on every tick, including when the reading
+        /// is back under the limit, or the run is never cleared.
+        func sustained(_ id: String, _ exceeded: Bool,
+                       for window: TimeInterval = Engine.alertSustain) -> Bool {
+            guard exceeded else {
+                alertCrossedAt[id] = nil
+                return false
+            }
+            let since = alertCrossedAt[id] ?? Date()
+            alertCrossedAt[id] = since
+            return Date().timeIntervalSince(since) >= window
+        }
+
+        func held(_ window: TimeInterval) -> String {
+            L("held for \(Int(window / 60)) min", "已持续 \(Int(window / 60)) 分钟")
+        }
+
         if let limit = config.alertMemoryPercent {
             let used = vitals.memUsedFraction * 100
-            if used >= limit {
+            if sustained("memory", used >= limit) {
                 fire("memory", L("Memory is high", "内存占用偏高"),
-                     String(format: L("%.0f%% used · pressure %@",
-                                      "已用 %.0f%% · 压力%@"),
-                            used, vitals.memoryPressure.label as NSString))
+                     String(format: L("%.0f%% used · pressure %@ · %@",
+                                      "已用 %.0f%% · 压力%@ · %@"),
+                            used, vitals.memoryPressure.label as NSString,
+                            held(Self.alertSustain) as NSString))
             }
         }
-        if let limit = config.alertBatteryTemperature,
-           let battery = vitals.battery, battery.temperature >= limit {
-            fire("battery-temp", L("Battery is running warm", "电池温度偏高"),
-                 String(format: L("%.1f°C — sustained heat is what ages the pack",
-                                  "%.1f°C —— 持续高温是电池老化的主因"),
-                        battery.temperature))
+        if let limit = config.alertBatteryTemperature {
+            let temperature = vitals.battery?.temperature
+            if sustained("battery-temp", (temperature ?? 0) >= limit),
+               let temperature {
+                fire("battery-temp", L("Battery is running warm", "电池温度偏高"),
+                     String(format: L("%.1f°C for %@ — sustained heat is what ages the pack",
+                                      "%.1f°C %@ —— 持续高温是电池老化的主因"),
+                            temperature, held(Self.alertSustain) as NSString))
+            }
         }
-        if let limit = config.alertCPUPercent, vitals.cpuBusy >= limit {
-            fire("cpu", L("CPU is saturated", "CPU 接近满载"),
-                 String(format: L("%.0f%% busy across the machine", "整机占用 %.0f%%"),
-                        vitals.cpuBusy))
+        if let limit = config.alertCPUPercent {
+            if sustained("cpu", vitals.cpuBusy >= limit, for: Self.alertSustainCPU) {
+                fire("cpu", L("CPU is saturated", "CPU 接近满载"),
+                     String(format: L("%.0f%% busy across the machine · %@",
+                                      "整机占用 %.0f%% · %@"),
+                            vitals.cpuBusy, held(Self.alertSustainCPU) as NSString))
+            }
         }
     }
 
@@ -405,11 +474,23 @@ final class Engine: @unchecked Sendable {
     }
 
     func stop() {
-        vitalsTimer?.cancel()
-        vitalsTimer = nil
-        timer?.cancel()
-        timer = nil
-        store.save()
+        onEngineQueue {
+            guard !isSecondary else { return }
+            vitalsTimer?.cancel()
+            vitalsTimer = nil
+            timer?.cancel()
+            timer = nil
+            finishInference()
+            priorities.releaseAll()
+            if var session = currentAway, !session.energyByProgram.isEmpty {
+                session.endedAt = Date()
+                awayLog.record(session)
+            }
+            currentAway = nil
+            store.save()
+            if let activity { ProcessInfo.processInfo.endActivity(activity) }
+            activity = nil
+        }
     }
 
     /// Everything learned about one program, for the detail view.
@@ -443,18 +524,31 @@ final class Engine: @unchecked Sendable {
     private var manual: Actions { Actions(dryRun: false) }
 
     func demoteNow(pid: Int32) -> Bool {
-        queue.sync { manual.demote(pid: pid) }
+        queue.sync {
+            guard let identity = previous?.processes[pid]?.identity,
+                  let sample = previous?.processes[pid],
+                  Lifelines.isProtected(sample.command) == nil,
+                  !config.neverTouch.contains(sample.command) else { return false }
+            return priorities.acquire(identity, reason: .manual, config: config)
+        }
     }
 
     func restoreNow(pid: Int32) -> Bool {
         queue.sync {
             incidents.removeValue(forKey: pid)
-            return manual.restorePriority(pid: pid)
+            guard let identity = previous?.processes[pid]?.identity else { return false }
+            return priorities.release(identity)
         }
     }
 
     func terminateNow(pid: Int32) -> Bool {
-        queue.sync { manual.terminate(pid: pid) }
+        queue.sync {
+            guard let sample = previous?.processes[pid], let identity = sample.identity,
+                  identity.canControl(config: config), ProcessIdentity.read(pid: pid) == identity,
+                  Lifelines.isProtected(sample.command) == nil,
+                  !config.neverTouch.contains(sample.command) else { return false }
+            return manual.terminate(pid: pid)
+        }
     }
 
     /// Programs with a baseline, most CPU-hungry first.
@@ -469,6 +563,7 @@ final class Engine: @unchecked Sendable {
     // MARK: - The tick
 
     private func tick() {
+        priorities.retryRestores()
         tickCount += 1
         let warmingUp = tickCount < Self.warmupTicks
         let interval = warmingUp ? Self.warmupInterval : config.tickSeconds
@@ -491,7 +586,9 @@ final class Engine: @unchecked Sendable {
         }
 
         guard let snapshot = sampler.snapshot() else {
-            log.write("sampling failed; skipping tick")
+            log.write("sampling failed; withdrawing automatic priority requests")
+            handleUnobservedProcesses(observed: [])
+            priorities.releaseAll(reason: .inference)
             return
         }
         defer { previous = snapshot }
@@ -521,7 +618,7 @@ final class Engine: @unchecked Sendable {
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
                                        usualCPUPercent: nil,
                                        energyImpact: delta.energyImpact,
-                                       netBytesPerSecond: Double(delta.netBytes) / delta.interval,
+                                       netBytesPerSecond: delta.netBytesPerSecond ?? 0,
                                        recentCPU: trail,
                                        status: .protected(reason.rawValue), detail: ""))
                 continue
@@ -534,7 +631,7 @@ final class Engine: @unchecked Sendable {
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
                                        usualCPUPercent: nil,
                                        energyImpact: delta.energyImpact,
-                                       netBytesPerSecond: Double(delta.netBytes) / delta.interval,
+                                       netBytesPerSecond: delta.netBytesPerSecond ?? 0,
                                        recentCPU: trail,
                                        status: .protected("excluded by you"), detail: ""))
                 continue
@@ -558,7 +655,7 @@ final class Engine: @unchecked Sendable {
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
                                        usualCPUPercent: usual,
                                        energyImpact: delta.energyImpact,
-                                       netBytesPerSecond: Double(delta.netBytes) / delta.interval,
+                                       netBytesPerSecond: delta.netBytesPerSecond ?? 0,
                                        recentCPU: trail,
                                        status: .anomalous(score: verdict.score),
                                        detail: verdict.reasons.joined(separator: " · ")))
@@ -572,7 +669,7 @@ final class Engine: @unchecked Sendable {
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
                                        usualCPUPercent: usual,
                                        energyImpact: delta.energyImpact,
-                                       netBytesPerSecond: Double(delta.netBytes) / delta.interval,
+                                       netBytesPerSecond: delta.netBytesPerSecond ?? 0,
                                        recentCPU: trail,
                                        status: .learning(samples: baseline?.cpuPercent.count ?? 0,
                                                          needed: config.minimumSamples),
@@ -587,7 +684,7 @@ final class Engine: @unchecked Sendable {
                                        cpuPercent: delta.cpuPercent, memBytes: delta.memBytes,
                                        usualCPUPercent: usual,
                                        energyImpact: delta.energyImpact,
-                                       netBytesPerSecond: Double(delta.netBytes) / delta.interval,
+                                       netBytesPerSecond: delta.netBytesPerSecond ?? 0,
                                        recentCPU: trail,
                                        status: .normal, detail: ""))
             }
@@ -597,7 +694,7 @@ final class Engine: @unchecked Sendable {
             accumulateAwayEnergy(deltas)
         }
 
-        forgetDeadProcesses(stillAlive: liveNow)
+        handleUnobservedProcesses(observed: liveNow)
 
         ticksSinceSave += 1
         // Every two minutes rather than five: the cost is one small file
@@ -677,7 +774,22 @@ final class Engine: @unchecked Sendable {
         let found = agentBooks.orphans(in: deltas, tree: tree,
                                        minimumCPU: config.cpuFloorPercent)
 
-        for orphan in found where !reportedOrphans.contains(orphan.pid) {
+        // A process whose parent has just exited is frequently mid-shutdown,
+        // and one 30-second window is long enough to catch it flushing buffers
+        // on its way out. Report it once it has been both stranded and busy
+        // across several windows — the case worth waking someone for is the
+        // one that is still there minutes later.
+        let now = Date()
+        for orphan in found where orphanBusySince[orphan.pid] == nil {
+            orphanBusySince[orphan.pid] = now
+        }
+        let settled = found.filter { orphan in
+            guard let since = orphanBusySince[orphan.pid] else { return false }
+            return now.timeIntervalSince(since) >= Self.orphanSustain
+                && orphan.strandedFor >= Self.orphanSustain
+        }
+
+        for orphan in settled where !reportedOrphans.contains(orphan.pid) {
             reportedOrphans.insert(orphan.pid)
             log.write("orphan: \(orphan.command) [\(orphan.pid)] left by "
                     + "\(orphan.startedBy), \(Int(orphan.cpuPercent))% CPU")
@@ -689,6 +801,9 @@ final class Engine: @unchecked Sendable {
         }
         let live = Set(found.map(\.pid))
         reportedOrphans = reportedOrphans.filter { live.contains($0) }
+        // Dropping below the CPU floor ends the run, so a process that idles
+        // and later spikes again starts its clock over.
+        orphanBusySince = orphanBusySince.filter { live.contains($0.key) }
         publish { $0.orphans = found }
     }
 
@@ -723,14 +838,17 @@ final class Engine: @unchecked Sendable {
 
         // Stand aside anything that is idle for itself. Only this app can tell
         // an idle program from a quiet one, which is what makes the choice safe.
-        if config.yieldForHeavyWork {
+        if config.yieldForHeavyWork && !config.dryRun {
             let planner = YieldPlanner(config: config)
             for candidate in planner.candidates(from: rows,
                                                 baseline: { self.store.baseline(for: $0) })
-            where manual.demote(pid: candidate.pid) {
-                yieldedPIDs.insert(candidate.pid)
+            {
+                guard let identity = previous?.processes[candidate.pid]?.identity,
+                      runtime.identity != identity,
+                      priorities.acquire(identity, reason: .inference, config: config) else { continue }
+                yieldedProcesses.insert(identity)
             }
-            session.programsYielded = yieldedPIDs.count
+            session.programsYielded = yieldedProcesses.count
         }
 
         inferenceStartSwap = state.vitals.swapUsedBytes
@@ -768,7 +886,17 @@ final class Engine: @unchecked Sendable {
             session.minutesThrottled += config.tickSeconds / 60
         }
         session.swapGrowth = monotonicDelta(vitals.swapUsedBytes, inferenceStartSwap)
-        if vitals.memoryPressure != .normal { session.sawMemoryPressure = true }
+        // Pressure blips under any real workload — one non-normal reading is
+        // the memory system doing its job, not a run being squeezed.
+        if vitals.memoryPressure != .normal {
+            let since = inferencePressureSince ?? Date()
+            inferencePressureSince = since
+            if Date().timeIntervalSince(since) >= Self.alertSustain {
+                session.sawMemoryPressure = true
+            }
+        } else {
+            inferencePressureSince = nil
+        }
 
         currentInference = session
         raiseWarnings(for: session)
@@ -820,8 +948,8 @@ final class Engine: @unchecked Sendable {
 
     private func finishInference() {
         guard var session = currentInference else { return }
-        for pid in yieldedPIDs { _ = manual.restorePriority(pid: pid) }
-        yieldedPIDs.removeAll()
+        priorities.releaseAll(reason: .inference)
+        yieldedProcesses.removeAll()
 
         session.endedAt = Date()
         currentInference = nil
@@ -871,8 +999,10 @@ final class Engine: @unchecked Sendable {
         if delta.cpuPercent >= threshold {
             if burstStarted[delta.pid] == nil { burstStarted[delta.pid] = Date() }
         } else if let started = burstStarted.removeValue(forKey: delta.pid) {
-            store.observeBurst(command: delta.command,
-                               seconds: Date().timeIntervalSince(started))
+            if incidents[delta.pid] == nil {
+                store.observeBurst(command: delta.command,
+                                   seconds: Date().timeIntervalSince(started))
+            }
         }
     }
 
@@ -883,8 +1013,9 @@ final class Engine: @unchecked Sendable {
     // MARK: - Escalation
 
     private func handleAnomaly(_ verdict: Verdict, delta: ProcDelta) {
+        guard let identity = delta.identity else { return }
         var incident = incidents[delta.pid] ?? Incident(
-            command: delta.command, startedAt: Date(),
+            command: delta.command, identity: identity, startedAt: Date(),
             anomalousTicks: 0, stage: .watching, stageEnteredAt: Date())
         incident.anomalousTicks += 1
 
@@ -898,66 +1029,51 @@ final class Engine: @unchecked Sendable {
                 // process is doing, and the evidence would be gone.
                 incident.stackFile = actions.captureStack(pid: delta.pid,
                                                           command: delta.command)
-                let ok = actions.demote(pid: delta.pid)
-                incident.stage = .demoted
+                let ok = priorities.acquire(identity, reason: .anomaly, config: config)
+                incident.stage = ok ? .demoted : .exhausted
                 incident.stageEnteredAt = Date()
                 report(verdict, delta: delta, incident: incident,
-                       action: ok ? .demoteToEfficiencyCores : nil)
+                       action: ok ? .backgroundPriority : nil)
             }
 
         case .demoted:
             if ticksInStage >= config.escalateAfterTicks {
-                if canRestart(delta.command) {
-                    let ok = actions.terminate(pid: delta.pid)
-                    noteRestart(delta.command)
-                    incident.stage = .restarted
-                    incident.stageEnteredAt = Date()
-                    report(verdict, delta: delta, incident: incident,
-                           action: ok ? .restart : nil)
-                } else {
-                    incident.stage = .exhausted
-                    incident.stageEnteredAt = Date()
-                    report(verdict, delta: delta, incident: incident, action: nil,
-                           note: L("restart rate limit reached — left on efficiency cores",
-                                   "重启次数已达上限 —— 保持在能效核上"))
-                }
+                incident.stage = .exhausted
+                incident.stageEnteredAt = Date()
+                report(verdict, delta: delta, incident: incident, action: nil,
+                       note: L("still unusual after lowering priority — inspect before quitting",
+                               "降低优先级后仍异常 —— 请检查后决定是否结束进程"))
             }
 
-        case .restarted, .exhausted:
+        case .exhausted:
             break
         }
 
         incidents[delta.pid] = incident
     }
 
-    private func canRestart(_ command: String) -> Bool {
-        let hourAgo = Date().addingTimeInterval(-3600)
-        let recent = (restartTimes[command] ?? []).filter { $0 > hourAgo }
-        restartTimes[command] = recent
-        return recent.count < config.maxRestartsPerHour
-    }
-
-    private func noteRestart(_ command: String) {
-        restartTimes[command, default: []].append(Date())
-    }
-
     private func resolveIfNeeded(pid: Int32, command: String) {
         guard let incident = incidents.removeValue(forKey: pid) else { return }
-        if incident.stage == .demoted {
-            _ = actions.restorePriority(pid: pid)
+        if priorities.leases[incident.identity] != nil {
+            let restored = priorities.release(incident.identity, reason: .anomaly)
             let minutes = Int(Date().timeIntervalSince(incident.startedAt) / 60)
-            log.write("\(command) [\(pid)] settled after \(minutes)m — priority restored")
+            log.write("\(command) [\(pid)] settled after \(minutes)m — "
+                      + (restored ? "anomaly priority request released" : "priority restore pending; will retry"))
         }
     }
 
-    private func forgetDeadProcesses(stillAlive: Set<Int32>) {
-        for pid in incidents.keys where !stillAlive.contains(pid) {
-            incidents.removeValue(forKey: pid)
+    private func handleUnobservedProcesses(observed: Set<Int32>) {
+        // Missing from top-N is not proof of exit or recovery. Withdraw our
+        // intervention when evidence disappears; restoration checks identity.
+        for pid in Array(incidents.keys) where !observed.contains(pid) {
+            if let incident = incidents.removeValue(forKey: pid) {
+                _ = priorities.release(incident.identity, reason: .anomaly)
+            }
         }
-        for pid in burstStarted.keys where !stillAlive.contains(pid) {
+        for pid in burstStarted.keys where !observed.contains(pid) {
             burstStarted.removeValue(forKey: pid)
         }
-        for pid in cpuTrail.keys where !stillAlive.contains(pid) {
+        for pid in cpuTrail.keys where !observed.contains(pid) {
             cpuTrail.removeValue(forKey: pid)
         }
     }
@@ -971,8 +1087,7 @@ final class Engine: @unchecked Sendable {
 
         let verb: String
         switch action {
-        case .demoteToEfficiencyCores: verb = L("moved to efficiency cores", "已移到能效核")
-        case .restart:                 verb = L("restarted", "已重启")
+        case .backgroundPriority: verb = L("background priority requested", "已请求后台优先级")
         case nil:                      verb = L("no action taken", "未做处置")
         }
         let phrase = config.dryRun

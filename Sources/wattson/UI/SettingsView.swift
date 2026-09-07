@@ -47,8 +47,8 @@ struct SettingsView: View {
                         .font(.ui(12.5, .medium)).foregroundStyle(Color.ink)
                     Text(model.config.dryRun
                          ? L("Reports only. Nothing is changed.", "仅报告，不做改动。")
-                         : L("Efficiency cores first, restart if that doesn't settle it.",
-                             "先移到能效核，未平息则重启。"))
+                         : L("Lower priority first; report if it remains unusual.",
+                             "先降低优先级，仍异常则报告并由你决定后续操作。"))
                         .font(.ui(11))
                         .foregroundStyle(Color.inkMuted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -61,8 +61,8 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L("Make room for heavy work", "为重负载让路"))
                         .font(.ui(12.5, .medium)).foregroundStyle(Color.ink)
-                    Text(L("Idle programs move to efficiency cores while model inference runs, and return afterwards.",
-                           "模型推理运行时，闲置程序移到能效核，结束后自动恢复。"))
+                    Text(L("When automatic actions are enabled, idle programs use background priority during inference and are restored afterwards.",
+                           "开启自动处置后，推理时降低闲置程序的优先级，结束后恢复。"))
                         .font(.ui(11)).foregroundStyle(Color.inkMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }

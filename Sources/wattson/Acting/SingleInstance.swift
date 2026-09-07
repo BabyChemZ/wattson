@@ -18,8 +18,8 @@ enum SingleInstance {
         try? FileManager.default.createDirectory(at: Config.directory,
                                                  withIntermediateDirectories: true)
         let path = Config.directory.appendingPathComponent("engine.lock").path
-        let descriptor = open(path, O_CREAT | O_RDWR, 0o644)
-        guard descriptor >= 0 else { return true }   // can't lock: don't block
+        let descriptor = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        guard descriptor >= 0 else { return false }
 
         if flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
             close(descriptor)

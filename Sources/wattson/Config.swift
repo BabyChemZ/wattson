@@ -28,12 +28,9 @@ struct Config: Codable {
     /// At the default 30s tick, 6 ticks is 3 minutes — long enough that no
     /// ordinary burst of work is ever touched.
     var sustainedTicks = 6
-    /// After demoting to efficiency cores, how many more ticks to wait for the
-    /// process to settle before escalating to a restart.
+    /// After lowering priority, how many ticks to wait before asking the user
+    /// to investigate. Automatic termination is deliberately unsupported.
     var escalateAfterTicks = 10
-    /// Restarting the same program more than this often means the restart is not
-    /// the fix; stop and leave it to the human.
-    var maxRestartsPerHour = 2
     /// Observe and report, change nothing. The default, deliberately: the tool
     /// should earn a few days of your trust before it is allowed to act.
     var dryRun = true
@@ -80,7 +77,7 @@ struct Config: Codable {
         let fallback = Config()
 
         func value<T: Decodable>(_ key: CodingKeys, _ standard: T) -> T {
-            (try? container.decodeIfPresent(T.self, forKey: key)) as? T ?? standard
+            (try? container.decodeIfPresent(T.self, forKey: key)) ?? standard
         }
         /// For optionals, absence means "use the default"; an explicit null
         /// means the user turned it off.
@@ -101,7 +98,6 @@ struct Config: Codable {
                                                fallback.meaningfulSyscallsPerCPUSecond)
         sustainedTicks = value(.sustainedTicks, fallback.sustainedTicks)
         escalateAfterTicks = value(.escalateAfterTicks, fallback.escalateAfterTicks)
-        maxRestartsPerHour = value(.maxRestartsPerHour, fallback.maxRestartsPerHour)
         dryRun = value(.dryRun, fallback.dryRun)
         yieldForHeavyWork = value(.yieldForHeavyWork, fallback.yieldForHeavyWork)
         neverTouch = value(.neverTouch, fallback.neverTouch)
@@ -149,6 +145,6 @@ struct Config: Codable {
                                                 withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(self).write(to: Self.path)
+        try encoder.encode(self).write(to: Self.path, options: .atomic)
     }
 }

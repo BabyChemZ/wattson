@@ -2,22 +2,15 @@ import Foundation
 
 /// What was done about a misbehaving process, in escalation order.
 enum Intervention: String, Codable {
-    /// Demote to background QoS. On Apple Silicon this confines the process to
-    /// the efficiency cores: power and temperature drop immediately, the process
-    /// keeps running, and nothing it was doing is lost. Fully reversible.
-    case demoteToEfficiencyCores
-    /// Ask the process to exit. Anything supervised (a proxy core under its GUI,
-    /// a launchd job) comes straight back in a clean state.
-    case restart
+    /// Request background scheduling policy. macOS chooses the cores and
+    /// throughput; this is not core affinity or a CPU quota.
+    case backgroundPriority
 }
 
 struct Actions {
     var dryRun: Bool
 
-    /// `taskpolicy -b` sets the background policy on a running task. This is the
-    /// same mechanism macOS itself uses to keep background work off the P-cores,
-    /// which is why it is the first thing to reach for: it is a supported path,
-    /// not a trick.
+    /// `taskpolicy -b` requests PRIO_DARWIN_BG for a running task.
     func demote(pid: Int32) -> Bool {
         guard !dryRun else { return true }
         return Shell.run("/usr/sbin/taskpolicy", ["-b", "-p", String(pid)], timeout: 5) != nil

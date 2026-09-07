@@ -32,8 +32,10 @@ struct ProcSample {
     /// Energy Impact. Already an interval measure — do not difference it.
     var energyImpact: Double = 0
 
-    var cumulativeNetBytesIn: UInt64 = 0
-    var cumulativeNetBytesOut: UInt64 = 0
+    // nil means unavailable, including a missing nettop row. Zero is a measured zero.
+    var cumulativeNetBytesIn: UInt64?
+    var cumulativeNetBytesOut: UInt64?
+    var identity: ProcessIdentity?
 
     var cumulativeSyscalls: UInt64 { cumulativeMachSyscalls &+ cumulativeBSDSyscalls }
 }
@@ -59,12 +61,18 @@ struct ProcDelta {
     let contextSwitches: UInt64
     let idleWakeups: UInt64
     let syscalls: UInt64
-    let netBytes: UInt64
+    let netBytes: UInt64?
 
     let intervalInstructions: UInt64
     let intervalCycles: UInt64
     /// Composite energy score matching Activity Monitor's Energy Impact.
     let energyImpact: Double
+    var identity: ProcessIdentity? = nil
+
+    var netBytesPerSecond: Double? {
+        guard let netBytes, interval > 0 else { return nil }
+        return Double(netBytes) / interval
+    }
 
     /// Percent of one core. 100 means one core fully saturated; 800 means eight.
     var cpuPercent: Double { interval > 0 ? (cpuSeconds / interval) * 100 : 0 }
@@ -86,7 +94,7 @@ struct ProcDelta {
     /// Bytes moved per CPU-second. For anything network-shaped this is the
     /// clearest "is it actually doing its job" signal available.
     var netBytesPerCPUSecond: Double? {
-        guard cpuSeconds > 0.05 else { return nil }
+        guard cpuSeconds > 0.05, let netBytes else { return nil }
         return Double(netBytes) / cpuSeconds
     }
 
@@ -123,7 +131,9 @@ extension Snapshot {
             // A matching PID with a different command name is a recycled PID,
             // not the same process.
             guard let before = previous.processes[pid],
-                  before.command == now.command else { return nil }
+                  before.command == now.command,
+                  before.identity == now.identity,
+                  now.cumulativeCPUSeconds >= before.cumulativeCPUSeconds else { return nil }
 
             let cpuSeconds = max(0, now.cumulativeCPUSeconds - before.cumulativeCPUSeconds)
 
@@ -139,13 +149,21 @@ extension Snapshot {
                 idleWakeups: monotonicDelta(now.cumulativeIdleWakeups,
                                             before.cumulativeIdleWakeups),
                 syscalls: monotonicDelta(now.cumulativeSyscalls, before.cumulativeSyscalls),
-                netBytes: monotonicDelta(now.cumulativeNetBytesIn, before.cumulativeNetBytesIn)
-                        + monotonicDelta(now.cumulativeNetBytesOut, before.cumulativeNetBytesOut),
+                netBytes: networkDelta(now, before),
                 // Already interval measurements — pass through, never difference.
                 intervalInstructions: now.intervalInstructions,
                 intervalCycles: now.intervalCycles,
-                energyImpact: now.energyImpact
+                energyImpact: now.energyImpact,
+                identity: now.identity
             )
         }
+    }
+
+    private func networkDelta(_ now: ProcSample, _ before: ProcSample) -> UInt64? {
+        guard let incoming = now.cumulativeNetBytesIn, let oldIncoming = before.cumulativeNetBytesIn,
+              let outgoing = now.cumulativeNetBytesOut, let oldOutgoing = before.cumulativeNetBytesOut,
+              incoming >= oldIncoming, outgoing >= oldOutgoing else { return nil }
+        let (total, overflow) = (incoming - oldIncoming).addingReportingOverflow(outgoing - oldOutgoing)
+        return overflow ? nil : total
     }
 }

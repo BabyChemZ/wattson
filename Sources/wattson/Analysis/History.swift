@@ -60,7 +60,7 @@ extension BehaviorBaseline {
             }
         }
         currentDay = today
-        todayCPU = RollingWindow()
+        todayCPU = RollingWindow(capacity: Self.dailyCapacity)
     }
 
     static let dayFormatter: DateFormatter = {

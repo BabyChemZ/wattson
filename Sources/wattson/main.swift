@@ -34,6 +34,7 @@ switch command {
 case "watch":
     let engine = Engine(config: config)
     engine.start { _ in }   // the CLI reports through the log, not the state
+    if engine.isSecondary { exit(0) }
     dispatchMain()
 
 case "top":

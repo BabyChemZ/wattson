@@ -70,37 +70,46 @@ struct VerdictEngine {
         // Away from the keyboard the bar comes down: a runaway then burns for
         // hours unseen, and there is nobody to interrupt with a false alarm.
         let threshold = config.deviationThreshold * context.sensitivityScale
-        guard cpuDeviation > threshold else {
+        let unusualCPU = cpuDeviation > threshold
+        let unusualDuration: Bool
+        if let burst = currentBurstSeconds, let longest = baseline.longestBurstEver,
+           baseline.burstSeconds.count >= 3, longest > 0 {
+            unusualDuration = burst > max(longest * 1.5, longest + 300)
+        } else {
+            unusualDuration = false
+        }
+        guard unusualCPU || unusualDuration else {
             return Verdict(pid: d.pid, command: d.command, judgment: .normal,
                            score: 0, reasons: [], cpuPercent: d.cpuPercent)
         }
 
-        if usingModes, baseline.cpuModes.modes.count > 1 {
-            let states = baseline.cpuModes.modes
-                .map { String(format: "%.0f%%", $0.center) }
-                .joined(separator: " / ")
-            reasons.append(String(format: L("CPU %.0f%% — matches none of its usual states (%@)",
-                                            "CPU %.0f%% —— 不属于它已知的任何状态（%@）"),
-                                  d.cpuPercent, states as NSString))
-        } else if let center = baseline.cpuModes.nearestCenter(to: d.cpuPercent)
-                    ?? fallback.median {
-            reasons.append(String(format: L("CPU %.0f%% vs its usual %.1f%%",
-                                            "CPU %.0f%%，而它的常态是 %.1f%%"),
-                                  d.cpuPercent, center))
+        if unusualCPU {
+            if usingModes, baseline.cpuModes.modes.count > 1 {
+                let states = baseline.cpuModes.modes
+                    .map { String(format: "%.0f%%", $0.center) }
+                    .joined(separator: " / ")
+                reasons.append(String(format: L("CPU %.0f%% — matches none of its usual states (%@)",
+                                                "CPU %.0f%% —— 不属于它已知的任何状态（%@）"),
+                                      d.cpuPercent, states as NSString))
+            } else if let center = baseline.cpuModes.nearestCenter(to: d.cpuPercent)
+                        ?? fallback.median {
+                reasons.append(String(format: L("CPU %.0f%% vs its usual %.1f%%",
+                                                "CPU %.0f%%，而它的常态是 %.1f%%"),
+                                      d.cpuPercent, center))
+            }
+            score += 0.35
         }
-        score += 0.35
 
         // --- Evidence: hot for longer than it has ever been hot ---
         // This is what separates a wedged browser from a busy one. A program
         // whose CPU is naturally spiky has a wide spread and hides inside it,
         // but it still has a longest-episode-ever, and exceeding that is new.
-        if let burst = currentBurstSeconds, let longest = baseline.longestBurstEver,
-           longest > 0, burst > longest * 1.5 {
+        if unusualDuration, let burst = currentBurstSeconds, let longest = baseline.longestBurstEver {
             reasons.append(String(
                 format: L("hot for %.0f min — its longest episode on record was %.0f min",
                           "已持续 %.0f 分钟 —— 它有记录以来最长的一次只有 %.0f 分钟"),
                 burst / 60, longest / 60))
-            score += 0.25
+            score += unusualCPU ? 0.25 : 0.55
         }
 
         // --- Evidence: a network program that stopped moving bytes ---

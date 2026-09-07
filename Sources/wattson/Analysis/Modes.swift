@@ -26,9 +26,28 @@ struct BehaviorModes: Equatable, Codable {
     /// Distance to the nearest mode, in units of that mode's own spread.
     /// Comparable to a z-score: past about 3.5 the reading belongs to none of
     /// the program's known states.
+    /// The share of a program's life a cluster must hold to stand for "normal".
+    ///
+    /// A cluster covering a tenth of the samples is not a second personality —
+    /// it is frequently the episode being looked for, fitted only because it
+    /// lasted long enough to be measured. Letting every cluster count means a
+    /// program legitimises its own runaway by running away often enough, which
+    /// is exactly backwards. Verified on a synthetic proxy that idled at 5% and
+    /// then wedged at 100%: while the wedge held a third of the window it was
+    /// correctly read as a second normal state, and once it held under a tenth
+    /// it was correctly read as an anomaly.
+    private static let normalWeight = 0.15
+
+    /// Modes with enough weight behind them to be called normal. The largest is
+    /// always kept, so a program is never left with nothing to be judged by.
+    var establishedModes: [Mode] {
+        let established = modes.filter { $0.weight >= Self.normalWeight }
+        return established.isEmpty ? modes : established
+    }
+
     func deviation(of value: Double) -> Double? {
         guard !modes.isEmpty else { return nil }
-        return modes.map { mode -> Double in
+        return establishedModes.map { mode -> Double in
             // A mode with no width still needs a scale, or an exactly-steady
             // program would call every deviation infinite. Use a floor
             // proportional to the mode itself.
@@ -39,7 +58,7 @@ struct BehaviorModes: Equatable, Codable {
 
     /// Which mode a reading belongs to, if any — used to explain a verdict.
     func nearestCenter(to value: Double) -> Double? {
-        modes.min { abs($0.center - value) < abs($1.center - value) }?.center
+        establishedModes.min { abs($0.center - value) < abs($1.center - value) }?.center
     }
 
     /// Fit modes to a set of observations by one-dimensional k-means.

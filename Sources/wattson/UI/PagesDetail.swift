@@ -332,7 +332,7 @@ struct EventsPage: View {
                                         .background(Capsule().fill(Color.surfaceSunken))
                                 }
                                 Spacer()
-                                Text(event.at.formatted(date: .abbreviated, time: .shortened))
+                                Text(eventStamp(event.at))
                                     .font(.figure(10)).foregroundStyle(Color.inkFaint)
                             }
                             ForEach(event.reasons, id: \.self) { reason in

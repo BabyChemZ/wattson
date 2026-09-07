@@ -34,3 +34,18 @@ func L(_ en: String, _ zh: String) -> String {
         return preferred.hasPrefix("zh") ? zh : en
     }
 }
+
+
+/// A date and time in the language the user chose for the interface.
+///
+/// `formatted()` and `Text(_:style:)` follow the system locale, so an English
+/// interface on a Chinese Mac printed "2026年9月7日 4:37" in the middle of
+/// otherwise English text. The interface language is a setting in this app;
+/// dates should honour it like everything else.
+func eventStamp(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: activeLanguage == .chinese ? "zh_CN" : "en_US")
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .short
+    return formatter.string(from: date)
+}

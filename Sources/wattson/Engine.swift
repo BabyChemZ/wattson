@@ -588,7 +588,7 @@ final class Engine: @unchecked Sendable {
     /// Watch a model run from load to exit: clear space for it, follow which
     /// phase it is in, and say something when the machine stops coping.
     private func updateInference(rows: [ProcessRow], deltas: [ProcDelta]) {
-        let runtime = deltas.first { HeavyWorkload.matches($0.command) }
+        let runtime = deltas.first { HeavyWorkload.matches($0.command, pid: $0.pid) }
 
         guard let runtime else {
             finishInference()

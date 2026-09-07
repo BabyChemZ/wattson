@@ -16,9 +16,20 @@ enum HeavyWorkload: String, Codable, CaseIterable, Identifiable {
         "vllm", "text-generation", "mlx_vlm",
     ]
 
-    static func matches(_ command: String) -> Bool {
+    /// Interpreters whose process name says nothing about what they are doing.
+    /// `mlx_lm.generate` shows up in `top` as plain "Python".
+    private static let interpreters = ["python", "python3", "python3.11",
+                                       "python3.12", "python3.13", "node", "bun",
+                                       "deno", "uv", "uvicorn"]
+
+    /// A runtime is recognised by name where the name is meaningful, and by
+    /// command line where it is not.
+    static func matches(_ command: String, pid: Int32? = nil) -> Bool {
         let name = command.lowercased()
-        return inferenceRuntimes.contains { name.contains($0) }
+        if inferenceRuntimes.contains(where: { name.contains($0) }) { return true }
+        guard let pid, interpreters.contains(where: { name == $0 || name.hasPrefix($0) })
+        else { return false }
+        return CommandLines.shared.matchesInferenceRuntime(pid: pid)
     }
 }
 
@@ -63,7 +74,7 @@ struct YieldPlanner {
             // or the workload we are making room for.
             guard Lifelines.isProtected(row.command) == nil,
                   !config.neverTouch.contains(row.command),
-                  !HeavyWorkload.matches(row.command) else { return nil }
+                  !HeavyWorkload.matches(row.command, pid: row.pid) else { return nil }
 
             guard let baseline = baseline(row.command),
                   baseline.cpuPercent.count >= config.minimumSamples,
@@ -105,5 +116,39 @@ final class YieldLog {
                                                  withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(sessions) else { return }
         try? data.write(to: url, options: .atomic)
+    }
+}
+
+
+/// Command lines, looked up once per process.
+///
+/// Reading one costs a `ps` invocation, which is far too expensive to repeat
+/// every tick for every interpreter on the machine — but a process's arguments
+/// never change, so a single lookup lasts its lifetime.
+final class CommandLines: @unchecked Sendable {
+    static let shared = CommandLines()
+
+    private let lock = NSLock()
+    private var cache: [Int32: String] = [:]
+
+    func line(pid: Int32) -> String? {
+        lock.lock()
+        if let cached = cache[pid] {
+            lock.unlock()
+            return cached.isEmpty ? nil : cached
+        }
+        lock.unlock()
+
+        let resolved = InferenceWatcher.commandLine(pid: pid) ?? ""
+        lock.lock()
+        if cache.count > 500 { cache.removeAll(keepingCapacity: true) }
+        cache[pid] = resolved
+        lock.unlock()
+        return resolved.isEmpty ? nil : resolved
+    }
+
+    func matchesInferenceRuntime(pid: Int32) -> Bool {
+        guard let line = line(pid: pid)?.lowercased() else { return false }
+        return HeavyWorkload.inferenceRuntimes.contains { line.contains($0) }
     }
 }

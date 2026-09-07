@@ -11,6 +11,11 @@ struct SystemVitals: Equatable {
     var memWiredBytes: UInt64 = 0
     var memCompressedBytes: UInt64 = 0
     var memUnusedBytes: UInt64 = 0
+    /// Pages the kernel will hand over under pressure without swapping:
+    /// inactive, speculative and purgeable. Treating only `free` as available
+    /// understates what a large allocation can actually get, which is why a
+    /// model that in fact fits was being called too big.
+    var memReclaimableBytes: UInt64 = 0
 
     var swapUsedBytes: UInt64 = 0
     var loadAverage: [Double] = []
@@ -36,6 +41,9 @@ struct SystemVitals: Equatable {
     var memUsedFraction: Double {
         memTotalBytes > 0 ? Double(memUsedBytes) / Double(memTotalBytes) : 0
     }
+
+    /// What a new allocation can realistically obtain.
+    var memAvailableBytes: UInt64 { memUnusedBytes + memReclaimableBytes }
 
     /// Parse the block of summary lines `top` emits before the table.
     static func parse(_ lines: [Substring]) -> SystemVitals {

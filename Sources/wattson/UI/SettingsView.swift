@@ -21,6 +21,7 @@ struct SettingsView: View {
 
                 behaviour
                 notifications
+                gpuMemory
                 menuBar
                 alerts
                 sensitivity
@@ -149,6 +150,39 @@ struct SettingsView: View {
 }
 
 extension SettingsView {
+    /// The only control here that changes a system-wide setting, so it says
+    /// what it does and offers the way back.
+    var gpuMemory: some View {
+        Card(title: L("GPU memory limit", "GPU 内存上限")) {
+            let total = model.state.machine.totalMemory
+            let current = GPUMemoryLimit.currentMB()
+            let recommended = GPUMemoryLimit.recommendedMB(totalBytes: total)
+
+            LabeledValue(label: L("Current cap", "当前上限"),
+                         value: current > 0
+                            ? "\(current / 1024) GB"
+                            : L("system default (~\(GPUMemoryLimit.defaultApproxMB(totalBytes: total) / 1024) GB)",
+                                "系统默认（约 \(GPUMemoryLimit.defaultApproxMB(totalBytes: total) / 1024) GB）"))
+
+            Text(L("Caps how much unified memory the GPU may hold. Raising it lets a larger model stay resident. Resets at restart.",
+                   "决定 GPU 最多能占用多少统一内存。调高可让更大的模型完整驻留。重启后失效。"))
+                .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                AccentButton(title: L("Raise to \(recommended / 1024) GB",
+                                      "提高到 \(recommended / 1024) GB")) {
+                    model.raiseGPUMemory(to: recommended)
+                }
+                if current > 0 {
+                    PlainButton(title: L("Restore default", "恢复默认")) {
+                        model.resetGPUMemory()
+                    }
+                }
+            }
+        }
+    }
+
     /// Which live readings ride in the menu bar.
     var menuBar: some View {
         Card(title: L("Menu bar", "菜单栏")) {

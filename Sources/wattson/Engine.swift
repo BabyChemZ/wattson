@@ -600,6 +600,7 @@ final class Engine: @unchecked Sendable {
             return
         }
         advanceInference(runtime: runtime)
+        planMemory(rows: rows)
     }
 
     private func beginInference(runtime: ProcDelta, rows: [ProcessRow]) {
@@ -661,6 +662,35 @@ final class Engine: @unchecked Sendable {
         raiseWarnings(for: session)
     }
 
+    /// Work out whether this model fits, and if not, what would have to close.
+    ///
+    /// The forecast comes from what the same model peaked at on a previous run,
+    /// which is the only honest source: model files on disk compress, context
+    /// and KV cache grow with use, and a number from a benchmark table is about
+    /// somebody else's machine.
+    private func planMemory(rows: [ProcessRow]) {
+        guard let session = currentInference else { return }
+        let forecast = MemoryForecast.forecast(model: session.model,
+                                               sessions: inferenceLog.sessions,
+                                               vitals: state.vitals)
+        var plan: MemoryReclaim?
+        if let forecast, !forecast.willFit {
+            plan = MemoryReclaim.plan(shortfall: forecast.shortfall, rows: rows,
+                                      config: config,
+                                      baseline: { self.store.baseline(for: $0) })
+        } else if session.swapGrowth > 0 || session.sawMemoryPressure {
+            // No history for this model, but it is visibly struggling — plan
+            // against what has already been pushed out to swap.
+            let gap = max(session.swapGrowth, 1_000_000_000)
+            plan = MemoryReclaim.plan(shortfall: gap, rows: rows, config: config,
+                                      baseline: { self.store.baseline(for: $0) })
+        }
+        publish {
+            $0.memoryForecast = forecast
+            $0.memoryPlan = plan
+        }
+    }
+
     /// The two walls this machine actually hits, said once each per run.
     private func raiseWarnings(for session: InferenceSession) {
         var active: [InferenceWarning] = []
@@ -690,7 +720,11 @@ final class Engine: @unchecked Sendable {
                          session.duration, session.minutesGenerating,
                          session.peakCPUTemperature, session.minutesThrottled,
                          formatBytes(session.swapGrowth)))
-        publish { $0.inferenceWarnings = [] }
+        publish {
+            $0.inferenceWarnings = []
+            $0.memoryForecast = nil
+            $0.memoryPlan = nil
+        }
     }
 
     func inferenceSessions() -> [InferenceSession] { queue.sync { inferenceLog.sessions } }

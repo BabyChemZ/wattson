@@ -103,13 +103,18 @@ final class VitalsSampler {
         // "App memory" as Activity Monitor reports it: resident anonymous pages
         // that are neither wired nor already compressed.
         let app = UInt64(stats.internal_page_count &- stats.purgeable_count) * pageSize
-        let free = UInt64(stats.free_count &+ stats.speculative_count) * pageSize
+        let free = UInt64(stats.free_count) * pageSize
+        // Inactive and speculative pages are backed by files or already clean;
+        // the kernel reclaims them before it swaps anything.
+        let reclaimable = UInt64(stats.inactive_count &+ stats.speculative_count
+                                 &+ stats.purgeable_count) * pageSize
 
         vitals.memTotalBytes = physicalMemory
         vitals.memWiredBytes = wired
         vitals.memCompressedBytes = compressed
         vitals.memUsedBytes = app + wired + compressed
         vitals.memUnusedBytes = free
+        vitals.memReclaimableBytes = reclaimable
 
         var swap = xsw_usage()
         var swapSize = MemoryLayout<xsw_usage>.size

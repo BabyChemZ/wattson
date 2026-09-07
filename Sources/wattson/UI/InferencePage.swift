@@ -8,6 +8,10 @@ struct InferencePage: View {
         VStack(alignment: .leading, spacing: 14) {
             if let session = model.state.inference {
                 LiveInferenceCard(session: session, model: model)
+                if let plan = model.state.memoryPlan {
+                    MemoryReclaimCard(forecast: model.state.memoryForecast,
+                                      plan: plan, model: model)
+                }
             } else {
                 Card {
                     VStack(alignment: .leading, spacing: 5) {
@@ -177,6 +181,118 @@ struct InferenceHistoryRow: View {
         } else {
             Label(L("comfortable", "轻松"), systemImage: "checkmark.circle.fill")
                 .font(.ui(10, .medium)).foregroundStyle(Color.healthyTint)
+        }
+    }
+}
+
+/// What to close so the model fits.
+///
+/// The shortfall is stated as a number and the candidates are ranked by what
+/// each gives back, because the decision someone is making is "how many of
+/// these do I have to close" — and the answer is usually one or two, not all
+/// of them.
+struct MemoryReclaimCard: View {
+    let forecast: MemoryForecast?
+    let plan: MemoryReclaim
+    @ObservedObject var model: AppModel
+    @State private var selected: Set<Int32> = []
+
+    private var freed: UInt64 {
+        plan.candidates.filter { selected.contains($0.pid) }
+            .reduce(0) { $0 + $1.memBytes }
+    }
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                header
+
+                if plan.candidates.isEmpty {
+                    Text(L("Nothing idle enough to suggest closing.",
+                           "没有足够空闲的程序可供建议关闭。"))
+                        .font(.ui(11)).foregroundStyle(Color.inkMuted)
+                } else {
+                    VStack(spacing: 4) {
+                        ForEach(plan.candidates.prefix(6)) { candidate in
+                            row(candidate)
+                        }
+                    }
+                    footer
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 7) {
+                Image(systemName: "memorychip")
+                    .font(.system(size: 13)).foregroundStyle(Color.alertTint)
+                Text(L("Short by \(formatBytes(plan.shortfall))",
+                       "还差 \(formatBytes(plan.shortfall))"))
+                    .font(.ui(12.5, .semibold)).foregroundStyle(Color.ink)
+            }
+            if let forecast {
+                Text(L("\(forecast.model) peaked at \(formatBytes(forecast.expected)) before · \(formatBytes(forecast.available)) free now",
+                       "\(forecast.model) 上次峰值 \(formatBytes(forecast.expected)) · 当前空闲 \(formatBytes(forecast.available))"))
+                    .font(.ui(10.5)).foregroundStyle(Color.inkMuted)
+            }
+        }
+    }
+
+    private func row(_ candidate: MemoryReclaim.Candidate) -> some View {
+        let isSelected = selected.contains(candidate.pid)
+        return HStack(spacing: 10) {
+            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                .font(.system(size: 12))
+                .foregroundStyle(isSelected ? Color.accent : Color.inkFaint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(candidate.displayName)
+                    .font(.ui(11.5)).foregroundStyle(Color.ink)
+                    .lineLimit(1).truncationMode(.middle)
+                Text(candidate.isApplication
+                     ? L("app · idle", "应用 · 空闲")
+                     : L("process · idle", "进程 · 空闲"))
+                    .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
+            }
+            Spacer()
+            Text(formatBytes(candidate.memBytes))
+                .font(.figure(11.5, .medium)).foregroundStyle(Color.memoryTint)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+            .fill(isSelected ? Color.accentWash : Color.clear))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isSelected { selected.remove(candidate.pid) }
+            else { selected.insert(candidate.pid) }
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Text(freed >= plan.shortfall
+                 ? L("Selected frees \(formatBytes(freed)) — enough",
+                     "已选可腾出 \(formatBytes(freed)) —— 够了")
+                 : L("Selected frees \(formatBytes(freed)) of \(formatBytes(plan.shortfall))",
+                     "已选可腾出 \(formatBytes(freed))，需要 \(formatBytes(plan.shortfall))"))
+                .font(.ui(10.5))
+                .foregroundStyle(freed >= plan.shortfall ? Color.healthyTint
+                                                         : Color.inkMuted)
+            Spacer()
+            Button(L("Suggest a set", "自动选择")) {
+                selected = Set(plan.minimalSelection.map(\.pid))
+            }
+            .buttonStyle(.plain)
+            .font(.ui(10.5)).foregroundStyle(Color.accent)
+
+            AccentButton(title: L("Close selected", "关闭所选")) {
+                model.closeForMemory(plan.candidates.filter { selected.contains($0.pid) })
+                selected.removeAll()
+            }
+            .opacity(selected.isEmpty ? 0.4 : 1)
+            .disabled(selected.isEmpty)
         }
     }
 }

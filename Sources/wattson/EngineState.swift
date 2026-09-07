@@ -86,6 +86,10 @@ struct EngineState: Equatable {
     var inferenceWarnings: [InferenceWarning] = []
     /// Processes still running after the agent that started them exited.
     var orphans: [Orphan] = []
+    /// What this model needed last time, against what is free now.
+    var memoryForecast: MemoryForecast?
+    /// What could be closed to cover the gap.
+    var memoryPlan: MemoryReclaim?
     /// Machine-wide history, oldest first, for the load chart.
     var cpuTrail: [Double] = []
     var memoryTrail: [Double] = []

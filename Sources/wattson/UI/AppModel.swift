@@ -380,6 +380,42 @@ final class AppModel: ObservableObject {
         _ = engine.terminateNow(pid: row.pid)
     }
 
+    /// Raise the GPU's share of unified memory, after saying what that means.
+    func raiseGPUMemory(to megabytes: Int) {
+        let alert = NSAlert()
+        alert.messageText = L("Raise GPU memory limit to \(megabytes / 1024) GB?",
+                              "将 GPU 内存上限提高到 \(megabytes / 1024) GB？")
+        alert.informativeText = L(
+            "Leaves the rest for macOS. Too little for the system makes the whole machine unstable, so this stays conservative. Requires your password and resets at restart.",
+            "其余留给 macOS。给系统留得太少会让整机不稳定，所以取值偏保守。需要输入密码，重启后自动失效。")
+        alert.addButton(withTitle: L("Continue", "继续"))
+        alert.addButton(withTitle: L("Cancel", "取消"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        _ = GPUMemoryLimit.apply(megabytes)
+    }
+
+    func resetGPUMemory() { _ = GPUMemoryLimit.reset() }
+
+    /// Close the chosen programs to make room, naming them first.
+    func closeForMemory(_ candidates: [MemoryReclaim.Candidate]) {
+        guard !candidates.isEmpty else { return }
+        let names = candidates.map(\.displayName).joined(separator: ", ")
+        let total = candidates.reduce(UInt64(0)) { $0 + $1.memBytes }
+
+        let alert = NSAlert()
+        alert.messageText = L("Close \(candidates.count) programs?",
+                              "关闭 \(candidates.count) 个程序？")
+        alert.informativeText = L(
+            "\(names) — freeing about \(formatBytes(total)). Applications are asked to quit and will save their state.",
+            "\(names) —— 约可腾出 \(formatBytes(total))。应用会收到退出请求并保存状态。")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("Close", "关闭"))
+        alert.addButton(withTitle: L("Cancel", "取消"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        for candidate in candidates { _ = MemoryReclaim.close(candidate) }
+    }
+
     /// Quit an orphaned process, asking first.
     func confirmTerminate(_ orphan: Orphan) {
         let alert = NSAlert()
@@ -634,7 +670,23 @@ final class AppModel: ObservableObject {
         live.sawMemoryPressure = true
         live.programsYielded = 7
         state.inference = live
-        state.inferenceWarnings = [.memoryPressure]
+        state.inferenceWarnings = [.swapping]
+        state.memoryForecast = MemoryForecast(
+            model: "Qwen3.8-27B-4bit", expected: 16_110_000_000,
+            available: 7_900_000_000, previousRuns: 2, previouslySwapped: true)
+        state.memoryPlan = MemoryReclaim(shortfall: 8_210_000_000, candidates: [
+            .init(pid: 501, command: "Microsoft Edge", displayName: "Microsoft Edge",
+                  memBytes: 3_100_000_000, idleness: 0.98, isApplication: true),
+            .init(pid: 502, command: "plugin-container",
+                  displayName: "Firefox (plugin-container)",
+                  memBytes: 1_040_000_000, idleness: 1.0, isApplication: false),
+            .init(pid: 503, command: "FlowerBrowser", displayName: "FlowerBrowser",
+                  memBytes: 940_000_000, idleness: 0.95, isApplication: true),
+            .init(pid: 504, command: "Zotero", displayName: "Zotero",
+                  memBytes: 620_000_000, idleness: 1.0, isApplication: true),
+            .init(pid: 505, command: "TencentMeeting", displayName: "腾讯会议",
+                  memBytes: 410_000_000, idleness: 0.99, isApplication: true),
+        ])
 
         func past(_ name: String, _ seconds: Double, _ memory: UInt64, _ temp: Double,
                   _ swap: UInt64, _ throttled: Double, _ ago: Double) -> InferenceSession {

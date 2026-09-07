@@ -273,6 +273,30 @@ not *"this work is pointless"* but *"this program is not acting like itself."*
 
 ## Install
 
+<p align="center">
+  <a href="https://github.com/BabyChemZ/wattson/releases/latest">
+    <img src="https://img.shields.io/badge/Download-Wattson.zip-0071e3?style=for-the-badge&logo=apple&logoColor=white">
+  </a>
+</p>
+
+**1.2 MB · macOS 13+ · Apple Silicon recommended**
+
+Unzip, drag to Applications, then — because the build is unsigned — clear the
+quarantine flag before first launch:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Wattson.app
+```
+
+Without that macOS refuses to open it and says the app is damaged, which it is
+not. Right-click → **Open** → **Open** works too. Notarising it away needs a
+paid Apple developer account.
+
+### Or build it yourself
+
+Skips the quarantine step entirely, and needs no Xcode — SwiftPM builds the
+binary and a shell script assembles the bundle:
+
 ```sh
 git clone https://github.com/BabyChemZ/wattson
 cd wattson
@@ -281,23 +305,7 @@ cp -r dist/Wattson.app /Applications/
 open /Applications/Wattson.app
 ```
 
-No Xcode needed — SwiftPM builds the binary, a shell script assembles the
-bundle. Then turn on **Start at login** in Settings.
-
-<details>
-<summary>Downloaded a release archive instead?</summary>
-
-<br>
-
-The build is unsigned, so a downloaded copy is quarantined:
-
-```sh
-xattr -dr com.apple.quarantine /Applications/Wattson.app
-```
-
-Building it yourself avoids this entirely.
-
-</details>
+Then turn on **Start at login** in Settings.
 
 ### Command line
 

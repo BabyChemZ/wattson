@@ -225,6 +225,26 @@ Python（真实运算）   99.9              0   8.22
 
 ## 安装
 
+<p align="center">
+  <a href="https://github.com/BabyChemZ/wattson/releases/latest">
+    <img src="https://img.shields.io/badge/下载-Wattson.zip-0071e3?style=for-the-badge&logo=apple&logoColor=white">
+  </a>
+</p>
+
+**1.2 MB · macOS 13+ · 推荐 Apple Silicon**
+
+解压后拖进「应用程序」，然后——因为构建未签名——首次打开前需要清除隔离标记：
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Wattson.app
+```
+
+不做这一步，macOS 会拒绝打开并提示应用「已损坏」，其实并没有。右键 → **打开** → **打开** 也可以。要彻底免除这一步需要付费的 Apple 开发者账号做公证。
+
+### 或者自己构建
+
+完全不会遇到上面的问题，而且不需要 Xcode——SwiftPM 编译二进制，一个 shell 脚本组装 bundle：
+
 ```sh
 git clone https://github.com/BabyChemZ/wattson
 cd wattson
@@ -233,22 +253,7 @@ cp -r dist/Wattson.app /Applications/
 open /Applications/Wattson.app
 ```
 
-不需要 Xcode——SwiftPM 编译二进制，一个 shell 脚本组装 bundle。然后在设置里打开**登录时启动**。
-
-<details>
-<summary>下载的是打包好的版本？</summary>
-
-<br>
-
-构建未签名，下载的副本会被隔离：
-
-```sh
-xattr -dr com.apple.quarantine /Applications/Wattson.app
-```
-
-自己构建则完全不会有这个问题。
-
-</details>
+然后在设置里打开**登录时启动**。
 
 ### 命令行
 

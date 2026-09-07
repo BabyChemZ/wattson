@@ -99,8 +99,13 @@ struct MemoryReclaim: Equatable {
                 idleness = min(max(usual > 0 ? 1 - (busiest / usual) : 1, 0), 1)
             }
 
+            // Label the group by the app that owns it, not by whichever
+            // helper happened to be picked as its representative.
+            let groupName = ProcessNaming.owningAppName(pid: row.pid,
+                                                        fallback: row.displayName)
+
             return Candidate(pid: row.pid, command: row.command,
-                             displayName: row.displayName, memBytes: totalMemory,
+                             displayName: groupName, memBytes: totalMemory,
                              processCount: members.count, idleness: idleness,
                              isApplication: NSRunningApplication(
                                 processIdentifier: row.pid) != nil)

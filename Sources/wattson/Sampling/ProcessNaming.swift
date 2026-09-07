@@ -36,13 +36,32 @@ enum ProcessNaming {
     }()
 
     fileprivate static func resolveBundle(pid: Int32, fallback: String) -> String {
-        guard let path = executablePath(pid: pid) else { return fallback }
+        outermostBundle(pid: pid) ?? fallback
+    }
+
+    /// The outermost .app enclosing a process, not the nearest one.
+    ///
+    /// Helpers are themselves wrapped in a bundle — a browser's content process
+    /// lives at Firefox.app/Contents/MacOS/plugin-container.app/... — so
+    /// stopping at the first .app found while walking up groups each helper
+    /// under itself, which is precisely the grouping that was useless.
+    static func outermostBundle(pid: Int32) -> String? {
+        guard let path = executablePath(pid: pid) else { return nil }
         var current = URL(fileURLWithPath: path)
+        var outermost: String?
         while current.pathComponents.count > 1 {
             current = current.deletingLastPathComponent()
-            if current.pathExtension == "app" { return current.path }
+            if current.pathExtension == "app" { outermost = current.path }
         }
-        return path
+        return outermost ?? path
+    }
+
+    /// Name of that outermost bundle, for labelling a group.
+    static func owningAppName(pid: Int32, fallback: String) -> String {
+        guard let bundle = outermostBundle(pid: pid), bundle.hasSuffix(".app") else {
+            return fallback
+        }
+        return URL(fileURLWithPath: bundle).deletingPathExtension().lastPathComponent
     }
 
     /// Resolve once per process; the answer cannot change while it lives.

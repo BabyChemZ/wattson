@@ -173,6 +173,15 @@ case "reclaim":
     }
     let want = UInt64((Double(arguments.dropFirst().first.flatMap { Double($0) } ?? 4) )
                       * 1_073_741_824)
+    if arguments.contains("-v") {
+        print("分组 key（内存前 10）:")
+        for row in rows.sorted(by: { $0.memBytes > $1.memBytes }).prefix(10) {
+            let key = ProcessNaming.bundleIdentity(pid: row.pid, fallback: row.command)
+            print("  \(row.displayName.padding(toLength: 30, withPad: " ", startingAt: 0))"
+                + " → \((key as NSString).lastPathComponent)")
+        }
+        print("")
+    }
     let plan = MemoryReclaim.plan(shortfall: want, rows: rows, config: config,
                                   baseline: { store2.baseline(for: $0) })
 

@@ -34,9 +34,11 @@ func formatRate(_ bytesPerSecond: Double) -> String {
     formatBytes(UInt64(max(bytesPerSecond, 0))) + "/s"
 }
 
-/// A duration in minutes, e.g. "3h 34m".
+/// A duration in minutes, e.g. "3h 34m" / "3 小时 34 分".
 func formatMinutes(_ minutes: Int) -> String {
-    minutes < 60 ? "\(minutes)m" : "\(minutes / 60)h \(minutes % 60)m"
+    if minutes < 60 { return L("\(minutes)m", "\(minutes) 分钟") }
+    return L("\(minutes / 60)h \(minutes % 60)m",
+             "\(minutes / 60) 小时 \(minutes % 60) 分")
 }
 
 /// Decode a null-terminated sysctl buffer without the deprecated initialiser.

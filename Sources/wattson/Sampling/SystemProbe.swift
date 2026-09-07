@@ -31,9 +31,96 @@ struct BatteryInfo: Equatable {
     var isHealthy: Bool { healthPercent >= 80 && !hasFailure }
 }
 
+
+/// Battery health as macOS itself reports it, rather than recomputed.
+///
+/// The obvious formula — NominalChargeCapacity / DesignCapacity — is what most
+/// third-party battery tools use, and it reads a point or two below what System
+/// Settings shows. The reason is that the gauge's raw capacity drifts with
+/// charge level and temperature: three reads a minute apart on one machine gave
+/// 4491, 4520 and 4523 mAh, or 97.0% / 97.6% / 97.7% of the same design
+/// capacity. Apple publishes a calibrated figure that only moves over months,
+/// and disagreeing with System Settings about a number the user can check is
+/// not worth the 70ms it costs to ask.
+///
+/// The XML key is used rather than the printed label because the label is
+/// localised and the key is not.
+final class CalibratedHealth: @unchecked Sendable {
+    static let shared = CalibratedHealth()
+
+    private let lock = NSLock()
+    private var cached: Double?
+    private var readAt: Date?
+    /// Health moves over months; re-reading every half hour is already generous.
+    private let maxAge: TimeInterval = 1800
+
+    func percent() -> Double? {
+        lock.lock()
+        if let value = cached, let at = readAt, Date().timeIntervalSince(at) < maxAge {
+            lock.unlock()
+            return value
+        }
+        lock.unlock()
+
+        let fresh = Self.readFromSystemProfiler()
+        lock.lock()
+        // Keep the previous answer if this read failed, rather than falling back
+        // to a figure that disagrees with System Settings.
+        if fresh != nil { cached = fresh }
+        readAt = Date()
+        let result = cached
+        lock.unlock()
+        return result
+    }
+
+    private static func readFromSystemProfiler() -> Double? {
+        guard let xml = Shell.run("/usr/sbin/system_profiler",
+                                  ["-xml", "SPPowerDataType"], timeout: 8)
+        else { return nil }
+        let key = "sppower_battery_health_maximum_capacity"
+        guard let keyRange = xml.range(of: "<key>\(key)</key>"),
+              let open = xml.range(of: "<string>", range: keyRange.upperBound..<xml.endIndex),
+              let close = xml.range(of: "</string>", range: open.upperBound..<xml.endIndex)
+        else { return nil }
+        let text = xml[open.upperBound..<close.lowerBound]
+            .trimmingCharacters(in: CharacterSet(charactersIn: " %\t\n"))
+        guard let value = Double(text), value > 0, value <= 100 else { return nil }
+        return value
+    }
+}
+
 enum BatteryProbe {
     /// Reads AppleSmartBattery straight from the IO registry. No helper tool,
     /// no elevated rights — the keys are readable by any process.
+
+    /// Time-to-empty and time-to-full as the rest of macOS reports them.
+    ///
+    /// IOPowerSources is what pmset and the menu bar read, so taking the same
+    /// source is the only way to show the same number.
+    private static func systemTimeEstimates() -> (toEmpty: Int?, toFull: Int?) {
+        guard let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue()
+                as? [CFTypeRef]
+        else { return (nil, nil) }
+
+        for source in sources {
+            guard let description = IOPSGetPowerSourceDescription(blob, source)?
+                    .takeUnretainedValue() as? [String: Any],
+                  (description[kIOPSTypeKey as String] as? String)
+                    == kIOPSInternalBatteryType
+            else { continue }
+
+            // Negative values mean "unknown" or "still calculating".
+            func positive(_ key: String) -> Int? {
+                guard let value = description[key] as? Int, value > 0 else { return nil }
+                return value
+            }
+            return (positive(kIOPSTimeToEmptyKey as String),
+                    positive(kIOPSTimeToFullChargeKey as String))
+        }
+        return (nil, nil)
+    }
+
     static func read() -> BatteryInfo? {
         let service = IOServiceGetMatchingService(
             kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
@@ -64,7 +151,11 @@ enum BatteryProbe {
             ?? int("AppleRawMaxCapacity") ?? 0
         info.hasFailure = (int("PermanentFailureStatus") ?? 0) != 0
 
-        if info.designCapacityMAh > 0 {
+        // Prefer the figure macOS itself publishes; fall back to the ratio only
+        // if that is unavailable. See `CalibratedHealth`.
+        if let calibrated = CalibratedHealth.shared.percent() {
+            info.healthPercent = calibrated
+        } else if info.designCapacityMAh > 0 {
             info.healthPercent = Double(info.nominalCapacityMAh)
                 / Double(info.designCapacityMAh) * 100
         }
@@ -76,9 +167,16 @@ enum BatteryProbe {
             }
             return nil
         }
-        info.timeRemainingMinutes = minutes(["AvgTimeToEmpty", "TimeRemaining",
-                                             "InstantTimeToEmpty"])
-        info.minutesToFull = minutes(["AvgTimeToFull"])
+        // Prefer the system's own estimate over the gauge's raw one. They
+        // disagree: at 43% under light load the gauge said 185 minutes while
+        // pmset and the menu bar both said 255. The gauge reports an
+        // instantaneous figure that swings with whatever the machine is doing
+        // this second; macOS publishes a smoothed one, and that is the number
+        // the user can see two inches away in the menu bar.
+        let system = Self.systemTimeEstimates()
+        info.timeRemainingMinutes = system.toEmpty
+            ?? minutes(["AvgTimeToEmpty", "TimeRemaining", "InstantTimeToEmpty"])
+        info.minutesToFull = system.toFull ?? minutes(["AvgTimeToFull"])
 
         // When the firmware has not settled on an estimate, derive one from the
         // charge left and the current draw.

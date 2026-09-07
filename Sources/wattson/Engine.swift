@@ -59,6 +59,7 @@ final class Engine: @unchecked Sendable {
     /// Machine-wide history for the load chart. 240 samples is two hours at the
     /// default tick.
     private var systemCPUTrail: [Double] = []
+    private var batteryChargeTrail: [Double] = []
     private var systemMemoryTrail: [Double] = []
     private static let systemTrailLength = 240
     private var temperatureTrail: [Double] = []
@@ -198,6 +199,10 @@ final class Engine: @unchecked Sendable {
 
         systemCPUTrail.append(vitals.cpuBusy)
         trim(&systemCPUTrail)
+        if let battery = vitals.battery {
+            batteryChargeTrail.append(battery.chargePercent)
+            trim(&batteryChargeTrail)
+        }
         systemMemoryTrail.append(vitals.memUsedFraction * 100)
         trim(&systemMemoryTrail)
         if let battery = vitals.battery {
@@ -231,6 +236,7 @@ final class Engine: @unchecked Sendable {
                 })
             }
             $0.cpuTrail = self.systemCPUTrail
+            $0.batteryTrail = self.batteryChargeTrail
             $0.memoryTrail = self.systemMemoryTrail
             $0.temperatureTrail = self.temperatureTrail
             $0.powerTrail = self.powerTrail

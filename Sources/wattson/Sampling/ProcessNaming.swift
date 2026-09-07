@@ -83,7 +83,35 @@ enum ProcessNaming {
             let role = helperRole(executable: executable, bundle: bundle)
             return role.isEmpty ? bundle : "\(bundle) \(role)"
         }
+        if let named = nameForVersionedExecutable(url) { return named }
         return executable.isEmpty ? fallback : executable
+    }
+
+    /// Some tools install each build under its version number, so the
+    /// executable is literally named "2.1.259" — that identifies the build and
+    /// tells a person nothing about which program is running. Claude Code does
+    /// this (~/.local/share/claude/versions/2.1.259); so do several version
+    /// managers. Walk up past the container directory to the name a person
+    /// would recognise.
+    private static func nameForVersionedExecutable(_ url: URL) -> String? {
+        guard looksLikeVersion(url.lastPathComponent) else { return nil }
+        let containers: Set<String> = ["versions", "version", "bin", "sbin",
+                                       "current", "libexec", "releases", "builds"]
+        var current = url
+        while current.pathComponents.count > 1 {
+            current = current.deletingLastPathComponent()
+            let name = current.lastPathComponent
+            guard !name.isEmpty, !name.hasPrefix("."),
+                  !containers.contains(name.lowercased()),
+                  !looksLikeVersion(name) else { continue }
+            return name
+        }
+        return nil
+    }
+
+    private static func looksLikeVersion(_ name: String) -> Bool {
+        guard name.contains("."), !name.isEmpty else { return false }
+        return name.allSatisfy { $0.isNumber || $0 == "." }
     }
 
     static func executablePath(pid: Int32) -> String? {

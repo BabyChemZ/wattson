@@ -428,9 +428,21 @@ struct ProcessBar: View {
     /// The largest value in the list, so rows are comparable to each other.
     let peak: Double
     var tint: Color = .cpuTint
+    /// Set when the bar stands for a process that is still running, which makes
+    /// it actionable. Historical rows — an away report, say — leave it nil and
+    /// stay a plain read-out.
+    var row: ProcessRow? = nil
+    var model: AppModel? = nil
+
+    @State private var hovering = false
 
     private var fraction: Double {
         min(max(value / max(peak, 0.0001), 0), 1)
+    }
+
+    private var actionable: Bool {
+        guard let row, let model else { return false }
+        return !model.isProtected(row)
     }
 
     var body: some View {
@@ -441,6 +453,21 @@ struct ProcessBar: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
+            // Appears under the pointer rather than sitting on every row: six
+            // permanent quit buttons on a dashboard invite the accident they
+            // are meant to enable.
+            if hovering, actionable, let row, let model {
+                Button {
+                    model.confirmTerminate(row)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Color.alertTint)
+                }
+                .buttonStyle(.plain)
+                .help(L("Quit \(row.displayName)", "结束 \(row.displayName)"))
+                .transition(.opacity)
+            }
             Text(caption)
                 .font(.figure(11, .medium))
                 .foregroundStyle(Color.inkMuted)
@@ -451,13 +478,35 @@ struct ProcessBar: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(Color.inkFaint.opacity(0.05))
+                        .fill(Color.inkFaint.opacity(hovering && row != nil ? 0.09 : 0.05))
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(tint.opacity(0.15))
                         .frame(width: max(5, geo.size.width * fraction))
                 }
             }
         )
+        .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .onHover { hovering = $0 && row != nil }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .modifier(ProcessBarInteraction(row: row, model: model))
+    }
+}
+
+/// Attaches the click and context menu only when the bar stands for a live
+/// process. Applying `onTapGesture` unconditionally would make historical rows
+/// look clickable and then do nothing, which is worse than a plain read-out.
+private struct ProcessBarInteraction: ViewModifier {
+    let row: ProcessRow?
+    let model: AppModel?
+
+    func body(content: Content) -> some View {
+        if let row, let model {
+            content
+                .onTapGesture { model.showInProcesses(row) }
+                .contextMenu { ProcessActions(row: row, model: model) }
+        } else {
+            content
+        }
     }
 }
 

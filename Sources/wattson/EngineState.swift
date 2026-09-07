@@ -99,6 +99,8 @@ struct EngineState: Equatable {
     /// long hot stretches, so this is the record of whether it worked.
     var temperatureTrail: [Double] = []
     var powerTrail: [Double] = []
+    /// Charge level over time — the series that answers "how fast is it draining".
+    var batteryTrail: [Double] = []
     var rows: [ProcessRow] = []
     var events: [Event] = []
     /// Programs running right now that have a usable baseline.

@@ -40,6 +40,16 @@ struct ProcessesPage: View {
                 }
             }
         }
+        // Arriving from a bar on another page: open that process straight away,
+        // then clear the request so returning here later starts clean.
+        .onAppear(perform: consumeFocusRequest)
+        .onChange(of: model.focusedPID) { _ in consumeFocusRequest() }
+    }
+
+    private func consumeFocusRequest() {
+        guard let pid = model.focusedPID else { return }
+        selected = pid
+        model.focusedPID = nil
     }
 
     private var columnHeader: some View {
@@ -154,31 +164,9 @@ struct FullProcessRow: View {
         .contextMenu { menu }
     }
 
-    /// Manual control. Offered even in observe-only mode: that setting governs
-    /// what the watchdog does unattended, not what you may do deliberately.
     @ViewBuilder
     private var menu: some View {
-        if let model, !model.isProtected(row) {
-            Button(L("Move to efficiency cores", "移到能效核")) { model.demote(row) }
-            Button(L("Restore normal priority", "恢复正常优先级")) { model.restore(row) }
-            Divider()
-            if model.isExcluded(row) {
-                Button(L("Watch this program again", "重新监控此程序")) {
-                    model.include(row)
-                }
-            } else {
-                Button(L("Never act on this program", "不再处置此程序")) {
-                    model.exclude(row)
-                }
-            }
-            Divider()
-            Button(L("Quit process…", "结束进程…"), role: .destructive) {
-                model.confirmTerminate(row)
-            }
-        } else {
-            Text(L("Protected — Wattson never acts on this",
-                   "受保护 —— Wattson 不会处置它"))
-        }
+        if let model { ProcessActions(row: row, model: model) }
     }
 
     private var tag: String? {
@@ -361,6 +349,47 @@ struct EventsPage: View {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+
+/// The actions offered on a process, wherever it appears.
+///
+/// Kept in one place so that a bar in the CPU page and a row in the process
+/// list agree about what may be done to a process — and so that the protection
+/// rules are checked once rather than at each call site.
+///
+/// Manual control is offered even in observe-only mode: that setting governs
+/// what the watchdog does unattended, not what you may do deliberately.
+struct ProcessActions: View {
+    let row: ProcessRow
+    let model: AppModel
+
+    var body: some View {
+        if model.isProtected(row) {
+            Text(L("Protected — Wattson never acts on this",
+                   "受保护 —— Wattson 不会处置它"))
+        } else {
+            Button(L("Move to efficiency cores", "移到能效核")) { model.demote(row) }
+            Button(L("Restore normal priority", "恢复正常优先级")) { model.restore(row) }
+            Divider()
+            if model.isExcluded(row) {
+                Button(L("Watch this program again", "重新监控此程序")) {
+                    model.include(row)
+                }
+            } else {
+                Button(L("Never act on this program", "不再处置此程序")) {
+                    model.exclude(row)
+                }
+            }
+            Divider()
+            Button(L("Show in Activity Monitor", "在活动监视器中查看")) {
+                model.openActivityMonitor()
+            }
+            Button(L("Quit process…", "结束进程…"), role: .destructive) {
+                model.confirmTerminate(row)
             }
         }
     }

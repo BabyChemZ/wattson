@@ -15,6 +15,8 @@ final class AppModel: ObservableObject {
 
     /// Which page the main window is showing.
     @Published var page: Page = .overview
+    /// Set when another page asks for a process to be revealed here.
+    @Published var focusedPID: Int32?
 
     private let engine: Engine
     private let chip = SystemProbe.chipName()
@@ -430,6 +432,14 @@ final class AppModel: ObservableObject {
 
     // MARK: Manual control
 
+    /// Jump to the process list with this program selected — the place where
+    /// its full history and every action are available. A bar on a dashboard
+    /// answers "what is busy"; this answers "and what about it".
+    func showInProcesses(_ row: ProcessRow) {
+        focusedPID = row.pid
+        page = .processes
+    }
+
     func demote(_ row: ProcessRow) { _ = engine.demoteNow(pid: row.pid) }
     func restore(_ row: ProcessRow) { _ = engine.restoreNow(pid: row.pid) }
 
@@ -437,7 +447,7 @@ final class AppModel: ObservableObject {
     /// and names what it is about to close.
     func confirmTerminate(_ row: ProcessRow) {
         let alert = NSAlert()
-        alert.messageText = L("Quit \(row.command)?", "结束 \(row.command)？")
+        alert.messageText = L("Quit \(row.displayName)?", "结束 \(row.displayName)？")
         alert.informativeText = L(
             "The process is asked to exit. Anything it has not saved may be lost.",
             "将请求该进程退出。它尚未保存的内容可能会丢失。")

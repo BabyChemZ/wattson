@@ -7,7 +7,7 @@ import SwiftUI
 /// item means one click gets you a panel that answers three questions you did
 /// not ask. Each of these carries its own number and opens its own detail.
 enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
-    case cpu, gpu, memory, temperature
+    case cpu, gpu, memory, temperature, battery
     var id: String { rawValue }
 
     var title: String {
@@ -16,6 +16,7 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
         case .gpu:         return L("GPU", "GPU")
         case .memory:      return L("Memory", "内存")
         case .temperature: return L("Temperature", "温度")
+        case .battery:     return L("Battery", "电池")
         }
     }
 
@@ -25,6 +26,7 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
         case .gpu:         return "G"
         case .memory:      return "M"
         case .temperature: return "T"
+        case .battery:     return "B"
         }
     }
 
@@ -34,6 +36,7 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
         case .gpu:         return .coreTint
         case .memory:      return .memoryTint
         case .temperature: return .alertTint
+        case .battery:     return .healthyTint
         }
     }
 
@@ -44,6 +47,7 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
         case .gpu:         return .gpu
         case .memory:      return .memory
         case .temperature: return .sensors
+        case .battery:     return .battery
         }
     }
 
@@ -54,7 +58,7 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .cpu:         return .cpu
         case .memory:      return .memory
-        case .gpu, .temperature: return .energy
+        case .gpu, .temperature, .battery: return .energy
         }
     }
 
@@ -69,6 +73,9 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
             return String(format: "%.0f%%", state.vitals.memUsedFraction * 100)
         case .temperature:
             return state.vitals.sensors.cpu.map { String(format: "%.0f°", $0) } ?? "—"
+        case .battery:
+            guard let battery = state.vitals.battery else { return "—" }
+            return String(format: "%.0f%%", battery.chargePercent)
         }
     }
 
@@ -79,6 +86,7 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
         case .gpu:         return state.gpuTrail
         case .memory:      return state.memoryTrail
         case .temperature: return state.temperatureTrail
+        case .battery:     return state.batteryTrail
         }
     }
 
@@ -113,6 +121,26 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
             guard let battery = vitals.battery else { return thermal }
             return L("battery \(Int(battery.temperature))° · \(thermal)",
                      "电池 \(Int(battery.temperature))° · \(thermal)")
+        case .battery:
+            guard let battery = vitals.battery else {
+                return L("no battery", "无电池")
+            }
+            let draw = String(format: "%.1f W", abs(battery.watts))
+            if battery.isCharging {
+                if let minutes = battery.minutesToFull {
+                    return L("\(formatMinutes(minutes)) to full · \(draw)",
+                             "\(formatMinutes(minutes)) 充满 · \(draw)")
+                }
+                return L("charging · \(draw)", "充电中 · \(draw)")
+            }
+            if battery.isPluggedIn {
+                return L("on power · \(draw)", "已接电源 · \(draw)")
+            }
+            if let minutes = battery.timeRemainingMinutes {
+                return L("\(formatMinutes(minutes)) left · \(draw)",
+                         "剩余 \(formatMinutes(minutes)) · \(draw)")
+            }
+            return L("estimating · \(draw)", "正在估算 · \(draw)")
         }
     }
 }
@@ -288,6 +316,49 @@ struct ModuleDetail: View {
                               value: sensors.fanRPM
                                 .map { String(format: "%.0f rpm", $0) }
                                 .joined(separator: " · "))
+                }
+
+            case .battery:
+                if let battery = vitals.battery {
+                    LegendRow(color: .healthyTint, label: L("Charge", "电量"),
+                              value: String(format: "%.0f%%", battery.chargePercent))
+                    if battery.isCharging {
+                        LegendRow(color: .clear, label: L("Time to full", "充满还需"),
+                                  value: battery.minutesToFull.map(formatMinutes)
+                                    ?? L("estimating", "估算中"))
+                    } else if !battery.isPluggedIn {
+                        LegendRow(color: .clear, label: L("Time remaining", "剩余可用"),
+                                  value: battery.timeRemainingMinutes.map(formatMinutes)
+                                    ?? L("estimating", "估算中"))
+                    }
+                    // Sign carries the direction, so the label says which way
+                    // rather than making the reader decode a minus sign.
+                    LegendRow(color: .alertTint,
+                              label: battery.watts >= 0
+                                ? L("Charging at", "充电功率")
+                                : L("Drawing", "放电功率"),
+                              value: String(format: "%.1f W", abs(battery.watts)))
+                    LegendRow(color: .clear, label: L("Voltage", "电压"),
+                              value: String(format: "%.2f V", battery.voltage))
+                    LegendRow(color: .clear, label: L("Current", "电流"),
+                              value: String(format: "%.2f A", battery.amperage))
+                    LegendRow(color: .clear, label: L("Power source", "电源"),
+                              value: battery.isPluggedIn
+                                ? L("Power adapter", "电源适配器")
+                                : L("Battery", "电池"))
+                    LegendRow(color: .clear, label: L("Capacity", "当前容量"),
+                              value: "\(battery.currentCapacityMAh) / "
+                                   + "\(battery.nominalCapacityMAh) mAh")
+                    LegendRow(color: model.healthTint(battery.healthPercent),
+                              label: L("Health", "健康度"),
+                              value: String(format: "%.0f%%", battery.healthPercent))
+                    LegendRow(color: .clear, label: L("Cycles", "循环次数"),
+                              value: "\(battery.cycleCount)")
+                    LegendRow(color: .healthyTint, label: L("Temperature", "温度"),
+                              value: String(format: "%.1f °C", battery.temperature))
+                } else {
+                    Text(L("No battery in this machine", "这台机器没有电池"))
+                        .font(.ui(11)).foregroundStyle(Color.inkFaint)
                 }
             }
         }

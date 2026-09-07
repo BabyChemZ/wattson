@@ -71,7 +71,8 @@ struct OverviewPage: View {
                     ForEach(rows) { row in
                         ProcessBar(name: row.displayName, value: row.cpuPercent,
                                    caption: String(format: "%.0f%%", row.cpuPercent),
-                                   peak: peak)
+                                   peak: peak,
+                                   row: row, model: model)
                     }
                 }
                 Card(title: L("Recent events", "最近事件")) {
@@ -374,7 +375,8 @@ struct GPUPage: View {
                         ForEach(rows) { row in
                             ProcessBar(name: row.displayName, value: row.energyImpact,
                                        caption: String(format: "%.0f", row.energyImpact),
-                                       peak: peak, tint: .coreTint)
+                                       peak: peak, tint: .coreTint,
+                                       row: row, model: model)
                         }
                         Text(L("macOS exposes no per-process GPU figure. Energy Impact includes the GPU's contribution and is the closest available.",
                                "macOS 不提供按进程的 GPU 占用。能耗影响包含 GPU 的贡献，是最接近的可得指标。"))
@@ -460,7 +462,8 @@ struct MemoryPage: View {
                 ForEach(rows) { row in
                     ProcessBar(name: row.displayName, value: Double(row.memBytes),
                                caption: formatBytes(row.memBytes), peak: peak,
-                               tint: .memoryTint)
+                               tint: .memoryTint,
+                               row: row, model: model)
                 }
             }
         }
@@ -514,7 +517,8 @@ struct BatteryPage: View {
                         ForEach(rows) { row in
                             ProcessBar(name: row.displayName, value: row.energyImpact,
                                        caption: String(format: "%.0f", row.energyImpact),
-                                       peak: peak, tint: .alertTint)
+                                       peak: peak, tint: .alertTint,
+                                       row: row, model: model)
                         }
                     }
                 }
@@ -590,7 +594,8 @@ struct NetworkPage: View {
                     ForEach(rows) { row in
                         ProcessBar(name: row.displayName, value: row.netBytesPerSecond,
                                    caption: formatRate(row.netBytesPerSecond),
-                                   peak: peak, tint: .cpuTint)
+                                   peak: peak, tint: .cpuTint,
+                                   row: row, model: model)
                     }
                 }
             }

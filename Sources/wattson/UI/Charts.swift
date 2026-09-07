@@ -386,8 +386,12 @@ struct BarChart: View {
 
     /// Columns run oldest to newest, so the last one is now.
     private func timeLabel(index: Int) -> String {
+        // Below `columns` samples, `bucket` emits one bar per sample rather
+        // than padding to a full row — so the newest bar sits at `filled - 1`,
+        // and measuring back from `columns - 1` dated every bar too early.
+        let filled = min(values.count, columns)
         let perColumn = max(Double(values.count) / Double(columns), 1) * secondsPerSample
-        let secondsAgo = Double(columns - 1 - index) * perColumn
+        let secondsAgo = Double(max(filled - 1 - index, 0)) * perColumn
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
         return formatter.string(from: Date().addingTimeInterval(-secondsAgo))

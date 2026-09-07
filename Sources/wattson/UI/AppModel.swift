@@ -320,9 +320,15 @@ final class AppModel: ObservableObject {
     }
 
     /// How much wall-clock time the trail charts cover.
+    ///
+    /// Measured from the sample interval the engine reports, not from the tick
+    /// setting: trails are filled by the one-second pipeline while `tickSeconds`
+    /// governs the 30-second one, so reading the latter here overstated every
+    /// chart's span by a factor of thirty.
     var trailSpanText: String {
-        let seconds = Int(Double(state.cpuTrail.count) * config.tickSeconds)
+        let seconds = Int(Double(state.cpuTrail.count) * state.trailSampleInterval)
         guard seconds > 0 else { return "" }
+        if seconds < 60 { return L("last \(seconds)s", "最近 \(seconds) 秒") }
         if seconds < 3600 {
             return L("last \(seconds / 60) min", "最近 \(seconds / 60) 分钟")
         }

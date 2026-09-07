@@ -59,6 +59,8 @@ final class Engine: @unchecked Sendable {
     /// Machine-wide history for the load chart. 240 samples is two hours at the
     /// default tick.
     private var systemCPUTrail: [Double] = []
+    private var trailStartedAt: Date?
+    private var lastTrailSampleAt: Date?
     private var batteryChargeTrail: [Double] = []
     private var systemMemoryTrail: [Double] = []
     private static let systemTrailLength = 240
@@ -197,6 +199,8 @@ final class Engine: @unchecked Sendable {
     private func sampleVitals() {
         let (vitals, cores) = vitalsSampler.sample()
 
+        restartTrailsIfSamplingWasInterrupted()
+
         systemCPUTrail.append(vitals.cpuBusy)
         trim(&systemCPUTrail)
         if let battery = vitals.battery {
@@ -236,6 +240,8 @@ final class Engine: @unchecked Sendable {
                 })
             }
             $0.cpuTrail = self.systemCPUTrail
+            $0.trailStartedAt = self.trailStartedAt
+            $0.trailSampleInterval = Self.vitalsInterval
             $0.batteryTrail = self.batteryChargeTrail
             $0.memoryTrail = self.systemMemoryTrail
             $0.temperatureTrail = self.temperatureTrail
@@ -356,6 +362,29 @@ final class Engine: @unchecked Sendable {
                  String(format: L("%.0f%% busy across the machine", "整机占用 %.0f%%"),
                         vitals.cpuBusy))
         }
+    }
+
+    /// A trail is a picture of the recent past, and a picture with an hour cut
+    /// out of the middle is a lie told with true numbers. When the gap since
+    /// the last sample is far longer than the interval — the machine slept,
+    /// or the engine was paused — start over rather than splicing across it.
+    private func restartTrailsIfSamplingWasInterrupted() {
+        let now = Date()
+        defer { lastTrailSampleAt = now }
+
+        guard let last = lastTrailSampleAt else {
+            trailStartedAt = now
+            return
+        }
+        guard now.timeIntervalSince(last) > Self.vitalsInterval * 5 else { return }
+
+        systemCPUTrail.removeAll(keepingCapacity: true)
+        batteryChargeTrail.removeAll(keepingCapacity: true)
+        systemMemoryTrail.removeAll(keepingCapacity: true)
+        temperatureTrail.removeAll(keepingCapacity: true)
+        powerTrail.removeAll(keepingCapacity: true)
+        gpuTrail.removeAll(keepingCapacity: true)
+        trailStartedAt = now
     }
 
     private func trim(_ trail: inout [Double]) {

@@ -160,7 +160,8 @@ struct ModuleDetail: View {
             VStack(alignment: .leading, spacing: 10) {
                 BarChart(values: module.trail(model.state), tint: module.tint,
                          ceiling: module.ceiling(model.state), columns: 40,
-                         unit: module.unit)
+                         unit: module.unit,
+                         secondsPerSample: model.state.trailSampleInterval)
                     .frame(height: 62)
 
                 details

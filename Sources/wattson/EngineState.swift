@@ -101,6 +101,16 @@ struct EngineState: Equatable {
     var powerTrail: [Double] = []
     /// Charge level over time — the series that answers "how fast is it draining".
     var batteryTrail: [Double] = []
+
+    /// When the current run of samples began, and how far apart they are.
+    ///
+    /// The trails are appended once per fast tick, but a tick can be missed —
+    /// the machine sleeps, the engine pauses — so neither the span nor the
+    /// time under a given bar can be derived from the tick setting alone. The
+    /// engine restarts the trail across a gap and stamps it here, which is
+    /// what makes "last 30 minutes" a fact rather than an assumption.
+    var trailStartedAt: Date?
+    var trailSampleInterval: TimeInterval = 1
     var rows: [ProcessRow] = []
     var events: [Event] = []
     /// Programs running right now that have a usable baseline.

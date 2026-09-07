@@ -52,7 +52,8 @@ struct OverviewPage: View {
             }
 
             Card(title: L("CPU load", "CPU 负载")) {
-                BarChart(values: model.state.cpuTrail, tint: .cpuTint)
+                BarChart(values: model.state.cpuTrail, tint: .cpuTint,
+                         secondsPerSample: model.state.trailSampleInterval)
                     .frame(height: 110)
                 Text(model.trailSpanText)
                     .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
@@ -162,7 +163,8 @@ struct CPUPage: View {
                 let axis = model.timeAxis(for: model.state.cpuTrail.count)
                 AxisChart(ceiling: 100, startLabel: axis.start,
                           endLabel: axis.end, midLabels: axis.mid) {
-                    BarChart(values: model.state.cpuTrail, tint: .cpuTint)
+                    BarChart(values: model.state.cpuTrail, tint: .cpuTint,
+                         secondsPerSample: model.state.trailSampleInterval)
                 }
                 Text(L("solid: average · faint: peak in that span",
                        "实色：均值 · 淡色：该段峰值"))
@@ -341,7 +343,8 @@ struct GPUPage: View {
 
                 if model.state.gpuTrail.count > 1 {
                     Card(title: L("GPU history", "GPU 历史")) {
-                        BarChart(values: model.state.gpuTrail, tint: .coreTint)
+                        BarChart(values: model.state.gpuTrail, tint: .coreTint,
+                         secondsPerSample: model.state.trailSampleInterval)
                             .frame(height: 120)
                         Text(model.trailSpanText)
                             .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
@@ -449,7 +452,8 @@ struct MemoryPage: View {
                 let axis = model.timeAxis(for: model.state.memoryTrail.count)
                 AxisChart(ceiling: 100, startLabel: axis.start,
                           endLabel: axis.end, midLabels: axis.mid) {
-                    BarChart(values: model.state.memoryTrail, tint: .memoryTint)
+                    BarChart(values: model.state.memoryTrail, tint: .memoryTint,
+                         secondsPerSample: model.state.trailSampleInterval)
                 }
                 Text(L("Swap \(formatBytes(vitals.swapUsedBytes))",
                        "交换区 \(formatBytes(vitals.swapUsedBytes))"))
@@ -527,7 +531,8 @@ struct BatteryPage: View {
                     Card(title: L("Temperature history", "温度历史")) {
                         BarChart(values: model.state.temperatureTrail,
                                  tint: model.temperatureTint(battery.temperature),
-                                 ceiling: 50, guides: [30, 35, 40], unit: "°C")
+                                 ceiling: 50, guides: [30, 35, 40], unit: "°C",
+                         secondsPerSample: model.state.trailSampleInterval)
                             .frame(height: 100)
                         HStack {
                             Text(model.trailSpanText)

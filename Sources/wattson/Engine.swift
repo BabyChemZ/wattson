@@ -563,6 +563,28 @@ final class Engine: @unchecked Sendable {
     }
 
     /// Programs with a baseline, most CPU-hungry first.
+    /// Dismiss one event, or all of them.
+    ///
+    /// An event is a record of something that happened, not a task list — but
+    /// once it has been read and dealt with, keeping it on screen only makes
+    /// the next real one harder to notice. Dismissal is display-only: the log
+    /// on disk keeps the full history either way.
+    func dismissEvent(id: UUID) {
+        queue.async {
+            self.recentEvents.removeAll { $0.id == id }
+            EventLog.save(self.recentEvents)
+            self.publish { $0.events = self.recentEvents }
+        }
+    }
+
+    func clearEvents() {
+        queue.async {
+            self.recentEvents.removeAll()
+            EventLog.save(self.recentEvents)
+            self.publish { $0.events = self.recentEvents }
+        }
+    }
+
     func knownProgramNames() -> [String] {
         queue.sync {
             // A program seen twice can carry a median of 100% and nothing to

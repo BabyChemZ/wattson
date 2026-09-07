@@ -318,39 +318,73 @@ struct EventsPage: View {
                     }
                 }
             } else {
+                HStack {
+                    Text(L("\(model.state.events.count) events", "\(model.state.events.count) 条事件"))
+                        .font(.ui(11)).foregroundStyle(Color.inkMuted)
+                    Spacer()
+                    Button(L("Clear all", "全部清除")) { model.clearEvents() }
+                        .buttonStyle(.plain)
+                        .font(.ui(11)).foregroundStyle(Color.accent)
+                }
                 ForEach(model.state.events) { event in
-                    Card {
-                        VStack(alignment: .leading, spacing: 7) {
-                            HStack {
-                                Text(event.command)
-                                    .font(.ui(12.5, .semibold)).foregroundStyle(Color.ink)
-                                if event.observedOnly {
-                                    Text(L("observed only", "仅观察"))
-                                        .font(.ui(9.5, .medium))
-                                        .foregroundStyle(Color.inkMuted)
-                                        .padding(.horizontal, 6).padding(.vertical, 2)
-                                        .background(Capsule().fill(Color.surfaceSunken))
-                                }
-                                Spacer()
-                                Text(eventStamp(event.at))
-                                    .font(.figure(10)).foregroundStyle(Color.inkFaint)
-                            }
-                            ForEach(event.reasons, id: \.self) { reason in
-                                HStack(alignment: .top, spacing: 6) {
-                                    Circle().fill(Color.alertTint)
-                                        .frame(width: 4, height: 4).padding(.top, 5)
-                                    Text(reason).font(.ui(11))
-                                        .foregroundStyle(Color.inkMuted)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                            Text(event.headline)
-                                .font(.ui(11, .medium)).foregroundStyle(Color.accent)
-                        }
-                    }
+                    EventCard(event: event, model: model)
                 }
             }
         }
+    }
+}
+
+/// One event, with the means to dismiss it once it has been dealt with.
+struct EventCard: View {
+    let event: Event
+    @ObservedObject var model: AppModel
+
+    @State private var hovering = false
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Text(event.command)
+                        .font(.ui(12.5, .semibold)).foregroundStyle(Color.ink)
+                    if event.observedOnly {
+                        Text(L("observed only", "仅观察"))
+                            .font(.ui(9.5, .medium))
+                            .foregroundStyle(Color.inkMuted)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(Color.surfaceSunken))
+                    }
+                    Spacer()
+                    Text(eventStamp(event.at))
+                        .font(.figure(10)).foregroundStyle(Color.inkFaint)
+                    // Under the pointer only: a row of permanent
+                    // crosses turns a record into a chore list.
+                    if hovering {
+                        Button {
+                            model.dismiss(event)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.inkFaint)
+                        }
+                        .buttonStyle(.plain)
+                        .help(L("Dismiss", "移除这条"))
+                    }
+                }
+                ForEach(event.reasons, id: \.self) { reason in
+                    HStack(alignment: .top, spacing: 6) {
+                        Circle().fill(Color.alertTint)
+                            .frame(width: 4, height: 4).padding(.top, 5)
+                        Text(reason).font(.ui(11))
+                            .foregroundStyle(Color.inkMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Text(event.headline)
+                    .font(.ui(11, .medium)).foregroundStyle(Color.accent)
+            }
+        }
+        .onHover { hovering = $0 }
     }
 }
 

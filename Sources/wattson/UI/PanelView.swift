@@ -87,7 +87,7 @@ struct PanelView: View {
             } else {
                 VStack(spacing: 3) {
                     ForEach(model.state.events.prefix(2)) { event in
-                        EventRowView(event: event)
+                        EventRowView(event: event, model: model)
                     }
                 }
                 .padding(.vertical, 7)
@@ -287,6 +287,9 @@ struct ProcessRowView: View {
 
 struct EventRowView: View {
     let event: Event
+    @ObservedObject var model: AppModel
+
+    @State private var hovering = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -297,6 +300,17 @@ struct EventRowView: View {
                         .font(.ui(12, .medium))
                         .foregroundStyle(Color.ink)
                     Spacer()
+                    if hovering {
+                        Button {
+                            model.dismiss(event)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.inkFaint)
+                        }
+                        .buttonStyle(.plain)
+                        .help(L("Dismiss", "移除这条"))
+                    }
                     Text(event.at, style: .time)
                         .font(.figure(9.5))
                         .foregroundStyle(Color.inkFaint)
@@ -318,6 +332,7 @@ struct EventRowView: View {
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
+        .onHover { hovering = $0 }
     }
 }
 

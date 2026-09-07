@@ -448,6 +448,22 @@ final class AppModel: ObservableObject {
         page = .processes
     }
 
+    func dismiss(_ event: Event) { engine.dismissEvent(id: event.id) }
+
+    func clearEvents() {
+        guard !state.events.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = L("Clear all \(state.events.count) events?",
+                              "清除全部 \(state.events.count) 条事件？")
+        alert.informativeText = L(
+            "The log file on disk keeps its full history either way.",
+            "磁盘上的日志文件仍会保留完整历史。")
+        alert.addButton(withTitle: L("Clear", "清除"))
+        alert.addButton(withTitle: L("Cancel", "取消"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        engine.clearEvents()
+    }
+
     func demote(_ row: ProcessRow) { _ = engine.demoteNow(pid: row.pid) }
     func restore(_ row: ProcessRow) { _ = engine.restoreNow(pid: row.pid) }
 

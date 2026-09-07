@@ -98,6 +98,19 @@ struct VerdictEngine {
                                       d.cpuPercent, center))
             }
             score += 0.35
+
+            // A reading many times past the threshold is not "a bit high for
+            // this program" — it is another program's behaviour wearing its
+            // name, and that is evidence in its own right rather than a hint
+            // needing corroboration. Requiring a second signal here meant
+            // letting through a process that went from 4.7% to 100% and stayed
+            // there, because it happened to be pure computation with no I/O
+            // signature to collapse. Deviation is measured against the
+            // program's own baseline, so a compiler at full load does not
+            // reach this: full load is already one of its normal modes.
+            if cpuDeviation > threshold * 5 {
+                score += 0.25
+            }
         }
 
         // --- Evidence: hot for longer than it has ever been hot ---

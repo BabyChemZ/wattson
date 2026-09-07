@@ -111,6 +111,7 @@ final class Engine: @unchecked Sendable {
     private var alertCrossedAt: [String: Date] = [:]
     /// pid -> when it was first seen stranded and above the CPU floor.
     private var orphanBusySince: [Int32: Date] = [:]
+    private var harmWatch = HarmWatch()
     /// pid -> when its energy impact first went past the mark in this run.
     private var heavyEnergySince: [Int32: Date] = [:]
     private var inferencePressureSince: Date?
@@ -734,6 +735,16 @@ final class Engine: @unchecked Sendable {
         updateInference(rows: rows, deltas: deltas)
         updateOrphans(deltas: deltas)
 
+        // Independent of every baseline: whatever is holding the machine down
+        // gets named, even if it has held it down long enough to have been
+        // learned as normal.
+        if let harm = harmWatch.observe(
+                vitals: snapshot.vitals, deltas: deltas,
+                interval: config.tickSeconds,
+                sustain: context.userIsAway ? 600 : 1200) {
+            report(harm)
+        }
+
         let trained = liveCommands.filter {
             (store.baseline(for: $0)?.cpuPercent.count ?? 0) >= config.minimumSamples
         }.count
@@ -1162,6 +1173,27 @@ final class Engine: @unchecked Sendable {
         EventLog.save(recentEvents)
 
         notifier.send(title: headline, body: body)
+    }
+}
+
+extension Engine {
+    /// Report sustained harm. Phrased as a consequence rather than an anomaly:
+    /// the reader's machine is hot, and this is what has been making it hot.
+    fileprivate func report(_ harm: HarmWatch.Report) {
+        let body = L(
+            "\(harm.displayName) accounts for \(Int(harm.share * 100))% of the CPU burned in the last \(harm.minutes) minutes, averaging \(Int(harm.averageCPU))%.",
+            "过去 \(harm.minutes) 分钟里烧掉的 CPU 有 \(Int(harm.share * 100))% 来自 \(harm.displayName)，平均占用 \(Int(harm.averageCPU))%。")
+
+        log.write("harm(\(harm.condition.rawValue)): \(harm.culprit) [\(harm.pid)] "
+                + "\(Int(harm.share * 100))% of \(harm.minutes)m, avg \(Int(harm.averageCPU))%")
+        notifier.send(title: harm.condition.headline, body: body)
+
+        recentEvents.insert(Event(at: Date(), command: harm.culprit,
+                                  headline: harm.condition.headline,
+                                  reasons: [body], stage: "harm",
+                                  observedOnly: config.dryRun), at: 0)
+        if recentEvents.count > 50 { recentEvents.removeLast() }
+        EventLog.save(recentEvents)
     }
 }
 

@@ -363,7 +363,6 @@ wattson watch                  # run the watchdog in the foreground
 - **No Developer ID signature or notarization** — downloaded previews need manual approval on first use.
 - **Regression checks** — `./scripts/test.sh`; then `swift build && python3 scripts/smoke-test.py` for isolated singleton and SIGTERM persistence checks. Full Xcode is not required.
 - **Inference and energy estimates** — GPU, swap, and thermal pressure are machine-wide signals. Energy Impact is a relative index, not measured task joules or proof that a model caused an OOM.
-- **Some screenshots show earlier behavior** — current automatic actions never terminate or restart processes.
 
 ---
 

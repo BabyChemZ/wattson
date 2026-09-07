@@ -84,10 +84,16 @@ struct VerdictEngine {
         }
 
         if unusualCPU {
-            if usingModes, baseline.cpuModes.modes.count > 1 {
-                let states = baseline.cpuModes.modes
-                    .map { String(format: "%.0f%%", $0.center) }
-                    .joined(separator: " / ")
+            if usingModes, baseline.cpuModes.establishedModes.count > 1 {
+                // Two centres a fraction of a percent apart both render as
+                // "30%", and a list reading "30% / 30%" looks like a defect
+                // rather than a program with two similar modes.
+                var seen: [String] = []
+                for mode in baseline.cpuModes.establishedModes {
+                    let text = String(format: "%.0f%%", mode.center)
+                    if !seen.contains(text) { seen.append(text) }
+                }
+                let states = seen.joined(separator: " / ")
                 reasons.append(String(format: L("CPU %.0f%% — matches none of its usual states (%@)",
                                                 "CPU %.0f%% —— 不属于它已知的任何状态（%@）"),
                                       d.cpuPercent, states as NSString))

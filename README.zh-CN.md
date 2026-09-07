@@ -286,7 +286,6 @@ wattson watch                  # 前台运行守护
 - **未做 Developer ID 签名及公证** — 预览版首次安装需要手动允许；这不妨碍小范围分发。
 - **回归验证** — `./scripts/test.sh` 运行独立 Swift 回归检查；`swift build && python3 scripts/smoke-test.py` 验证隔离引擎的单实例与 SIGTERM 保存。无需安装完整 Xcode。
 - **推理和能耗是估计** — GPU、swap、热压力主要是整机指标；Energy Impact 是相对指标，不是按任务计量的焦耳数，不能据此证明模型导致 OOM 或节省了多少电。
-- **截图可能来自较早版本** — 最新自动处置不会终止或重启进程。
 
 ---
 

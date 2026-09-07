@@ -179,6 +179,36 @@ final class AppModel: ObservableObject {
         return zip(labels, averages).map { ($0, String(format: "%.2f", $1)) }
     }
 
+    func gpuMemoryRows(_ gpu: GPUInfo) -> [(String, String)] {
+        let cap = GPUMemoryLimit.currentMB()
+        let total = state.machine.totalMemory
+        return [
+            (L("In use", "已用"), formatBytes(gpu.inUseMemory)),
+            (L("Allocated", "已分配"), formatBytes(gpu.allocatedMemory)),
+            (L("Cap", "上限"), cap > 0
+                ? "\(cap / 1024) GB"
+                : L("default (~\(GPUMemoryLimit.defaultApproxMB(totalBytes: total) / 1024) GB)",
+                    "默认（约 \(GPUMemoryLimit.defaultApproxMB(totalBytes: total) / 1024) GB）")),
+            (L("Machine memory", "整机内存"), formatBytes(total)),
+        ]
+    }
+
+    func gpuThermalRows() -> [(String, String)] {
+        var rows: [(String, String)] = []
+        if let value = state.vitals.sensors.gpu {
+            rows.append((L("GPU", "GPU"), String(format: "%.1f °C", value)))
+        }
+        if let value = state.vitals.sensors.cpu {
+            rows.append((L("CPU", "CPU"), String(format: "%.1f °C", value)))
+        }
+        rows.append((L("Thermal state", "热状态"), state.vitals.thermal.label))
+        if let battery = state.vitals.battery {
+            rows.append((L("Power draw", "功率"),
+                         String(format: "%.1f W", abs(battery.watts))))
+        }
+        return rows
+    }
+
     func sensorGroupRows() -> [(String, String)] {
         let s = state.vitals.sensors
         var rows: [(String, String)] = []

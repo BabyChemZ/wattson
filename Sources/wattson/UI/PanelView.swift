@@ -67,8 +67,24 @@ struct PanelView: View {
             Hairline()
             machineLine
 
-            if !model.state.events.isEmpty {
-                Hairline()
+            Hairline()
+            if model.state.events.isEmpty {
+                // Say it rather than showing nothing: an empty area reads as a
+                // missing feature, where "nothing flagged" is the good outcome
+                // and worth stating.
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 10)).foregroundStyle(Color.healthyTint)
+                    Text(L("No events", "无事件"))
+                        .font(.ui(11)).foregroundStyle(Color.inkMuted)
+                    Spacer()
+                    Text(L("watching \(model.state.rows.count)",
+                           "监视 \(model.state.rows.count) 个"))
+                        .font(.ui(10)).foregroundStyle(Color.inkFaint)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+            } else {
                 VStack(spacing: 3) {
                     ForEach(model.state.events.prefix(2)) { event in
                         EventRowView(event: event)

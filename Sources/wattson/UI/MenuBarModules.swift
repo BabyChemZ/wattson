@@ -135,7 +135,7 @@ struct ModuleDetail: View {
                          unit: module.unit)
                     .frame(height: 62)
 
-                summary
+                details
 
                 if !rows.isEmpty {
                     Hairline()
@@ -189,46 +189,106 @@ struct ModuleDetail: View {
         .padding(.bottom, 9)
     }
 
-    /// One line of context specific to this reading.
+    /// Everything about this reading that fits in a panel: the same figures
+    /// its full page carries, minus the charts that need the width.
     @ViewBuilder
-    private var summary: some View {
+    private var details: some View {
         let vitals = model.state.vitals
-        switch module {
-        case .cpu:
-            HStack(spacing: 14) {
-                LegendDot(color: .systemTint, label: L("sys", "系统"),
+        VStack(spacing: 4) {
+            switch module {
+            case .cpu:
+                LegendRow(color: .systemTint, label: L("System", "系统"),
                           value: String(format: "%.0f%%", vitals.cpuSystem))
-                LegendDot(color: .cpuTint, label: L("user", "用户"),
+                LegendRow(color: .cpuTint, label: L("User", "用户"),
                           value: String(format: "%.0f%%", vitals.cpuUser))
-                Spacer()
-            }
-        case .memory:
-            HStack(spacing: 14) {
-                LegendDot(color: .memoryTint, label: L("pressure", "压力"),
-                          value: vitals.memoryPressure.label)
-                if vitals.isSwapping {
-                    LegendDot(color: .swapTint, label: L("swap", "交换"),
-                              value: formatBytes(vitals.swapUsedBytes))
+                LegendRow(color: .idleTint, label: L("Idle", "闲置"),
+                          value: String(format: "%.0f%%", vitals.cpuIdle))
+                LegendRow(color: .coreTint, label: L("Efficiency cores", "能效核心"),
+                          value: String(format: "%.0f%%",
+                                        model.clusterLoad(model.efficiencyCores)))
+                LegendRow(color: .cpuTint,
+                          label: L("\(model.state.performanceLevelName) cores",
+                                   "\(model.state.performanceLevelName) 核心"),
+                          value: String(format: "%.0f%%",
+                                        model.clusterLoad(model.performanceCores)))
+                if let frequency = vitals.frequency {
+                    LegendRow(color: .clear, label: L("Clock", "频率"),
+                              value: [frequency.efficiencyMHz, frequency.performanceMHz]
+                                .compactMap { $0.map { String(format: "%.0f", $0) } }
+                                .joined(separator: " / ") + " MHz")
                 }
-                Spacer()
-            }
-        case .gpu:
-            HStack(spacing: 14) {
+                LegendRow(color: .clear, label: L("Load average", "平均负载"),
+                          value: model.loadAverageText)
+                LegendRow(color: .clear, label: L("Threads", "线程"),
+                          value: "\(vitals.threadCount)")
+
+            case .gpu:
                 if let gpu = vitals.gpu {
-                    LegendDot(color: .coreTint, label: L("vram", "显存"),
+                    LegendRow(color: .coreTint, label: L("Device", "设备"),
+                              value: String(format: "%.0f%%", gpu.deviceUtilization))
+                    LegendRow(color: .cpuTint, label: L("Renderer", "渲染器"),
+                              value: String(format: "%.0f%%", gpu.rendererUtilization))
+                    LegendRow(color: .memoryTint, label: L("Tiler", "分块器"),
+                              value: String(format: "%.0f%%", gpu.tilerUtilization))
+                    LegendRow(color: .clear, label: L("In use", "已用显存"),
                               value: formatBytes(gpu.inUseMemory))
+                    LegendRow(color: .clear, label: L("Allocated", "已分配"),
+                              value: formatBytes(gpu.allocatedMemory))
+                } else {
+                    Text(L("No accelerator statistics", "未读取到 GPU 统计"))
+                        .font(.ui(11)).foregroundStyle(Color.inkFaint)
                 }
-                Spacer()
-            }
-        case .temperature:
-            HStack(spacing: 14) {
+
+            case .memory:
+                LegendRow(color: .memoryTint, label: L("App", "应用"),
+                          value: formatBytes(vitals.memUsedBytes
+                                             - vitals.memWiredBytes
+                                             - vitals.memCompressedBytes))
+                LegendRow(color: .systemTint, label: L("Wired", "联动"),
+                          value: formatBytes(vitals.memWiredBytes))
+                LegendRow(color: .swapTint, label: L("Compressed", "已压缩"),
+                          value: formatBytes(vitals.memCompressedBytes))
+                LegendRow(color: .idleTint, label: L("Free", "空闲"),
+                          value: formatBytes(vitals.memUnusedBytes))
+                LegendRow(color: .healthyTint, label: L("Available", "可用"),
+                          value: formatBytes(vitals.memAvailableBytes))
+                LegendRow(color: .swapTint, label: L("Swap", "交换区"),
+                          value: formatBytes(vitals.swapUsedBytes))
+                LegendRow(color: model.pressureTint, label: L("Pressure", "压力"),
+                          value: vitals.memoryPressure.label)
+
+            case .temperature:
+                let sensors = vitals.sensors
+                if let value = sensors.performanceCore {
+                    LegendRow(color: .cpuTint,
+                              label: L("\(model.state.performanceLevelName) cores",
+                                       "\(model.state.performanceLevelName) 核心"),
+                              value: String(format: "%.1f °C", value))
+                }
+                if let value = sensors.efficiencyCore {
+                    LegendRow(color: .coreTint, label: L("Efficiency cores", "能效核心"),
+                              value: String(format: "%.1f °C", value))
+                }
+                if let value = sensors.gpu {
+                    LegendRow(color: .memoryTint, label: L("GPU", "GPU"),
+                              value: String(format: "%.1f °C", value))
+                }
+                if let value = sensors.skin {
+                    LegendRow(color: .clear, label: L("Enclosure", "机身"),
+                              value: String(format: "%.1f °C", value))
+                }
                 if let battery = vitals.battery {
-                    LegendDot(color: .healthyTint, label: L("battery", "电池"),
-                              value: String(format: "%.0f°C", battery.temperature))
+                    LegendRow(color: .healthyTint, label: L("Battery", "电池"),
+                              value: String(format: "%.1f °C", battery.temperature))
                 }
-                LegendDot(color: model.thermalTint, label: L("state", "状态"),
+                LegendRow(color: model.thermalTint, label: L("Thermal state", "热状态"),
                           value: vitals.thermal.label)
-                Spacer()
+                if !sensors.fanRPM.isEmpty {
+                    LegendRow(color: .clear, label: L("Fans", "风扇"),
+                              value: sensors.fanRPM
+                                .map { String(format: "%.0f rpm", $0) }
+                                .joined(separator: " · "))
+                }
             }
         }
     }

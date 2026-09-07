@@ -347,15 +347,40 @@ struct GPUPage: View {
                     }
                 }
 
-                Card(title: L("Allocation", "分配")) {
-                    DetailGrid(rows: [
-                        (L("In use", "已用"), formatBytes(gpu.inUseMemory)),
-                        (L("Allocated", "已分配"), formatBytes(gpu.allocatedMemory)),
-                        (L("Device utilisation", "设备占用"),
-                         String(format: "%.0f%%", gpu.deviceUtilization)),
-                        (L("Renderer utilisation", "渲染器占用"),
-                         String(format: "%.0f%%", gpu.rendererUtilization)),
-                    ])
+                HStack(alignment: .top, spacing: 12) {
+                    Card(title: L("Video memory", "显存")) {
+                        DetailGrid(rows: model.gpuMemoryRows(gpu))
+                        Text(L("The cap is what the GPU may hold of unified memory. Raising it lets a larger model stay resident.",
+                               "上限是 GPU 可占用的统一内存量。调高可让更大的模型完整驻留。"))
+                            .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Card(title: L("Thermal", "温度")) {
+                        DetailGrid(rows: model.gpuThermalRows())
+                    }
+                }
+
+                Card(title: L("Likely responsible", "可能的来源"),
+                     trailing: AnyView(
+                        Text(L("by Energy Impact", "按能耗影响"))
+                            .font(.ui(9.5)).foregroundStyle(Color.inkFaint))) {
+                    let rows = model.topByEnergy(6)
+                    if rows.isEmpty {
+                        Text(L("No data yet", "暂无数据"))
+                            .font(.ui(11)).foregroundStyle(Color.inkFaint)
+                    } else {
+                        let peak = rows.first?.energyImpact ?? 1
+                        ForEach(rows) { row in
+                            ProcessBar(name: row.displayName, value: row.energyImpact,
+                                       caption: String(format: "%.0f", row.energyImpact),
+                                       peak: peak, tint: .coreTint)
+                        }
+                        Text(L("macOS exposes no per-process GPU figure. Energy Impact includes the GPU's contribution and is the closest available.",
+                               "macOS 不提供按进程的 GPU 占用。能耗影响包含 GPU 的贡献，是最接近的可得指标。"))
+                            .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         } else {

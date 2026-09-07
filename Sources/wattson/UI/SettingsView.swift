@@ -277,7 +277,8 @@ struct Field: View {
                         .fill(Color.surfaceSunken)
                         .overlay(
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(Color.hairline, lineWidth: 0.5))
+                                .strokeBorder(Color.hairline, lineWidth: 0.5)
+                                .allowsHitTesting(false))
                 )
             Text(hint).font(.ui(10.5)).foregroundStyle(Color.inkFaint)
         }

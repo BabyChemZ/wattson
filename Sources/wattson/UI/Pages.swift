@@ -810,7 +810,8 @@ struct StatTile: View {
         .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(Color.hairline, lineWidth: 0.5))
+            .strokeBorder(Color.hairline, lineWidth: 0.5)
+            .allowsHitTesting(false))
     }
 }
 

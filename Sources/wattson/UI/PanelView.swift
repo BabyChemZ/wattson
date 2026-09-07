@@ -62,14 +62,44 @@ struct PanelView: View {
                     ReadingRow(module: module, model: model) { opened = module }
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, 3)
 
-            if let event = model.state.events.first {
+            Hairline()
+            machineLine
+
+            if !model.state.events.isEmpty {
                 Hairline()
-                EventRowView(event: event)
-                    .padding(.vertical, 8)
+                VStack(spacing: 3) {
+                    ForEach(model.state.events.prefix(2)) { event in
+                        EventRowView(event: event)
+                    }
+                }
+                .padding(.vertical, 7)
             }
         }
+    }
+
+    /// One line about the machine as a whole, under the per-reading rows.
+    private var machineLine: some View {
+        HStack(spacing: 0) {
+            machineStat(L("Load", "负载"), model.loadText)
+            machineStat(L("Processes", "进程"), "\(model.state.vitals.processCount)")
+            machineStat(L("Modelled", "已建模"), "\(model.state.learnedPrograms)")
+            machineStat(L("Uptime", "运行"), model.uptimeDescription)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+    }
+
+    private func machineStat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label.uppercased())
+                .font(.ui(8, .semibold)).tracking(0.5)
+                .foregroundStyle(Color.inkFaint)
+            Text(value)
+                .font(.figure(11, .medium)).foregroundStyle(Color.ink)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var footer: some View {
@@ -95,20 +125,27 @@ struct ReadingRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 10) {
-                Text(module.title)
-                    .font(.ui(12)).foregroundStyle(Color.ink)
-                    .frame(width: 54, alignment: .leading)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(module.title)
+                        .font(.ui(12)).foregroundStyle(Color.ink)
+                    Text(module.subtitle(model.state))
+                        .font(.ui(9.5)).foregroundStyle(Color.inkFaint)
+                        .lineLimit(1)
+                }
+                .frame(width: 118, alignment: .leading)
+
                 Sparkline(values: module.trail(model.state), tint: module.tint)
-                    .frame(height: 16)
+                    .frame(height: 20)
+
                 Text(module.value(model.state))
-                    .font(.figure(12.5, .medium)).foregroundStyle(module.tint)
-                    .frame(width: 52, alignment: .trailing)
+                    .font(.figure(13, .medium)).foregroundStyle(module.tint)
+                    .frame(width: 50, alignment: .trailing)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Color.inkFaint)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 7)
+            .padding(.vertical, 6)
             .background(hovering ? Color.surfaceSunken : .clear)
             .contentShape(Rectangle())
         }

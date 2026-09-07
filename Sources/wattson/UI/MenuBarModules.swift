@@ -87,6 +87,34 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
     }
 
     var unit: String { self == .temperature ? "°" : "%" }
+
+    /// The line under the number on the overview. One reading alone rarely
+    /// says enough — 64% memory means something different with swap than
+    /// without — but the full breakdown belongs in the detail, not here.
+    func subtitle(_ state: EngineState) -> String {
+        let vitals = state.vitals
+        switch self {
+        case .cpu:
+            return L("sys \(Int(vitals.cpuSystem))% · user \(Int(vitals.cpuUser))%",
+                     "系统 \(Int(vitals.cpuSystem))% · 用户 \(Int(vitals.cpuUser))%")
+        case .gpu:
+            guard let gpu = vitals.gpu else { return L("no data", "无数据") }
+            return L("\(formatBytes(gpu.inUseMemory)) in use",
+                     "已用显存 \(formatBytes(gpu.inUseMemory))")
+        case .memory:
+            let pressure = vitals.memoryPressure.label
+            return vitals.isSwapping
+                ? L("\(pressure) · swap \(formatBytes(vitals.swapUsedBytes))",
+                    "\(pressure) · 交换 \(formatBytes(vitals.swapUsedBytes))")
+                : L("\(pressure) · \(formatBytes(vitals.memAvailableBytes)) available",
+                    "\(pressure) · 可用 \(formatBytes(vitals.memAvailableBytes))")
+        case .temperature:
+            let thermal = vitals.thermal.label
+            guard let battery = vitals.battery else { return thermal }
+            return L("battery \(Int(battery.temperature))° · \(thermal)",
+                     "电池 \(Int(battery.temperature))° · \(thermal)")
+        }
+    }
 }
 
 /// One reading in detail: its history, its breakdown, and what is responsible

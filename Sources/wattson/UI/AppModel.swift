@@ -469,6 +469,12 @@ final class AppModel: ObservableObject {
         MainWindow.show(model: self)
     }
 
+    /// Save before going away.
+    func quit() {
+        engine.flush()
+        NSApplication.shared.terminate(nil)
+    }
+
     func openSettings() {
         page = .settings
         openMainWindow()

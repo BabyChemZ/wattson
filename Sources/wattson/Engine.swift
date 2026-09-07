@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Where a misbehaving process sits in the escalation ladder.
 enum Stage: String {
@@ -39,6 +40,7 @@ final class Engine: @unchecked Sendable {
     /// process table waits on `top`.
     private var vitalsTimer: DispatchSourceTimer?
     private static let vitalsInterval: TimeInterval = 1
+    private var terminationSource: DispatchSourceSignal?
     private var timer: DispatchSourceTimer?
 
     private var previous: Snapshot?
@@ -124,6 +126,7 @@ final class Engine: @unchecked Sendable {
     func start(onUpdate: @escaping (EngineState) -> Void) {
         guard timer == nil else { return }
         self.onUpdate = onUpdate
+        installShutdownHooks()
         log.write("wattson started — tick \(Int(config.tickSeconds))s, "
                 + "mode \(config.dryRun ? "observe-only" : "active")")
 
@@ -137,6 +140,37 @@ final class Engine: @unchecked Sendable {
         vitals.resume()
 
         scheduleTimer(interval: Self.warmupInterval)
+    }
+
+    /// Persist on the way out.
+    ///
+    /// Quitting from the menu bar goes through NSApplication.terminate, which
+    /// never reaches `stop()` — so months of learning could be a few minutes
+    /// short every single time the app was closed normally.
+    private func installShutdownHooks() {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil, queue: nil) { [weak self] _ in
+            self?.flush()
+        }
+        // Covers a SIGTERM from launchd or the command line, where no
+        // notification is delivered at all.
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: queue)
+        source.setEventHandler { [weak self] in
+            self?.flush()
+            exit(0)
+        }
+        signal(SIGTERM, SIG_IGN)
+        source.resume()
+        terminationSource = source
+    }
+
+    /// Write everything learned to disk, now.
+    func flush() {
+        queue.sync {
+            store.save()
+            ticksSinceSave = 0
+        }
     }
 
     /// The fast pipeline. Runs every second, touches nothing that shells out.
@@ -505,7 +539,10 @@ final class Engine: @unchecked Sendable {
         forgetDeadProcesses(stillAlive: liveNow)
 
         ticksSinceSave += 1
-        if ticksSinceSave >= 10 { store.save(); ticksSinceSave = 0 }
+        // Every two minutes rather than five: the cost is one small file
+        // write, and the loss on an unclean exit is whatever has not been
+        // written yet.
+        if ticksSinceSave >= 4 { store.save(); ticksSinceSave = 0 }
 
         // Progress counts only the programs running *now*, not every program
         // ever seen.

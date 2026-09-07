@@ -1,92 +1,264 @@
-# Wattson
-
-**Every process monitor on macOS tells you which program is using the most CPU.
-None of them tell you whether it should be.**
-
-Wattson learns what each program on your Mac normally does — over months, not
-minutes — and notices when one stops behaving like itself.
-
 <p align="center">
-  <img src="docs/overview-dark-en.png" width="820" alt="Wattson dashboard">
+  <img src="docs/icon.png" width="120" alt="Wattson">
 </p>
 
-A full monitor and a watchdog in one: CPU, memory, battery, network and disk at
-the depth you would expect from a system monitor — plus the thing no monitor
-does, which is knowing what "normal" looks like for each program and telling you
-when one departs from it.
+<h1 align="center">Wattson</h1>
 
-Native look in both appearances, English and 简体中文, no configuration to get
-started. [中文说明](README.zh-CN.md)
+<p align="center">
+  <b>A Mac monitor that learns what <i>normal</i> looks like for every program —<br>
+  and a watchdog that acts on it while you're away.</b>
+</p>
 
-```
-04:46:40  [demoted] verge-mihomo [92561] score 0.65
-          CPU 100% vs its 47-day norm of 1.5%
-          network throughput collapsed to 0% of normal
-          stopped making syscalls while pegging the CPU
-          → moved to efficiency cores
-          stack sample: verge-mihomo-92561-2026-09-06T04-46-40.txt
-```
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-13%2B-000000?style=flat-square&logo=apple&logoColor=white">
+  <img src="https://img.shields.io/badge/Apple%20Silicon-optimised-0071e3?style=flat-square">
+  <img src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white">
+  <img src="https://img.shields.io/badge/no%20root-required-34C759?style=flat-square">
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
+</p>
 
-## The problem
+<p align="center">
+  English · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-You leave your Mac at home running something long — a build, an agent, a
-training job — and come back to a machine that has been at 90°C for nine hours
-because some background daemon wedged itself in a loop at 11am.
+<p align="center">
+  <img src="docs/overview-dark-en.png" width="860" alt="Dashboard">
+</p>
 
-Existing tools do not help with this, and it is worth being precise about why.
-App Tamer, CPU Cap, OpenTamer and friends all work the same way: *"if process X
-goes above N%, throttle it."* That rule is useless here, because on a machine
-doing real work the runaway process and the useful one look identical:
+---
 
-| | CPU | Should you kill it? |
-|---|---|---|
-| Codex compiling for 20 minutes | 100% | No — that's the job |
-| Clash wedged in a DNS loop | 100% | Yes — it's been broken since 11am |
+## Why
 
-A fixed threshold cannot separate these. So you either set it so high it never
-fires, or you throttle your own work.
+Every process monitor tells you which program is using the most CPU. **None can
+tell you whether it should be.**
+
+You leave the Mac running something long and come back to a machine that has
+been at 90°C for nine hours, because a background daemon wedged itself in a
+loop at 11am. A threshold can't catch that — on a machine doing real work, the
+runaway and the useful process look identical:
+
+<table>
+<tr><td width="50%">
+
+**A compiler, mid-build**<br>
+`100% CPU` · leave it alone
+
+</td><td width="50%">
+
+**A proxy in a DNS loop**<br>
+`100% CPU` · broken since 11am
+
+</td></tr>
+</table>
 
 ## The idea
 
-Don't ask *how much* CPU a process is using. Ask whether **this** program has
-ever used CPU **this way before**.
+> Don't ask *how much* CPU a program is using.
+> Ask whether **this** program has ever used CPU **this way** before.
 
-That question has an answer, and the answer is different for every program:
+Baselines are **clustered, not averaged** — most programs have several honest
+modes. An editor idles near zero and compiles near a full core; a single median
+lands in the empty gap between them and calls both states abnormal. On this
+machine, **43 of 45** modelled programs turned out to have more than one normal.
 
-| Program's history | Typical | Spread | Sees 100% today | Verdict |
-|---|---|---|---|---|
-| A proxy daemon, always quiet | 1.5% | tiny | wildly out of character | **flagged** |
-| A browser, naturally spiky | 30% | wide | seen it a hundred times | ignored |
-| A renderer, always maxed | 95% | tiny | that's just Tuesday | ignored |
+| Program's history | Sees 100% today | Verdict |
+|:---|:---|:---|
+| A proxy, always quiet | wildly out of character | 🔴 **flagged** |
+| A browser, naturally spiky | seen it a hundred times | ⚪ ignored |
+| A renderer, always maxed | that's just Tuesday | ⚪ ignored |
 
-wattson keeps a per-program behavioural baseline and scores each observation
-against that program's own history. Nothing to configure, no allowlist to
-maintain, no thresholds to guess. The programs that are supposed to be hot stay
-hot.
+Memory is two-tier — a rolling window for recent hours, plus **one summary per
+program per day, kept 90 days**. A short window is dragged upward by an episode
+that outlasts it, so a process wedged since yesterday would gradually *become*
+its own new normal. Which is exactly the failure that matters when you're away
+for a week.
 
-### Long memory, on purpose
+---
 
-Baselines are two-tier: a high-resolution rolling window for the last few hours,
-plus one compressed summary **per program per day, kept for 90 days**.
+## Built for agents and local models
 
-This is not a detail. A short rolling window is dragged upward by an episode
-that lasts longer than the window itself — a process wedged since yesterday
-gradually *becomes* its own new normal and stops being reported, which is
-precisely the failure mode that matters when you are away for a week. A window
-built from daily medians cannot be moved by one bad day.
+This is where the baseline earns its keep, because these workloads fail in ways
+ordinary software doesn't.
 
-### Level is not enough — duration counts too
+<table>
+<tr>
+<td width="45%"><img src="docs/inference-dark-en.png"></td>
+<td>
 
-A browser's CPU is naturally spiky, so its spread is wide and a genuine wedge
-can hide inside the noise. But every program still has a longest-episode-ever.
-Twenty minutes at 100% is a compiler being a compiler; twenty minutes at 100%
-from something that has never exceeded thirty seconds in three months is not.
+### 🧠 Model inference
 
-## What it deliberately does not do
+Runs followed end to end — runtime and model identified, phase inferred from
+behaviour, peak memory, GPU, temperature, throttling and swap recorded.
 
-It does not judge whether a computation is *useful*. That is not decidable, and
-measurements say so plainly. Here are two processes on a real machine — one in
-an infinite empty loop, one doing actual arithmetic:
+Past runs get a **verdict**: `comfortable` · `throttled` · `didn't fit`.
+
+That column answers the question you actually have before downloading seven
+gigabytes — and answers it *from your machine*, not a benchmark table.
+
+</td>
+</tr>
+<tr>
+<td><img src="docs/away-dark-en.png"></td>
+<td>
+
+### 🌙 While you were away
+
+A session opens when the keyboard goes quiet and closes when you're back: peak
+battery temperature, minutes above 35 °C, charge consumed, throttling — and
+**Energy Impact integrated per program** across the whole session.
+
+Instantaneous energy says who's costly *now*. Integrated over eight hours it
+says who actually drained the battery. Usually a different answer.
+
+</td>
+</tr>
+<tr>
+<td><img src="docs/sensors-dark-en.png"></td>
+<td>
+
+### 🌡 Sensors
+
+**116 temperature sensors** read straight from the SMC, grouped by what they
+measure — performance cores, efficiency cores, GPU, enclosure, power delivery.
+
+Each group is reported by its *hottest* member, since that's the one that
+decides when the system throttles.
+
+</td>
+</tr>
+</table>
+
+<details>
+<summary><b>🧹 Agent leftovers</b> — processes an agent started and walked away from</summary>
+
+<br>
+
+Close a program and it's gone. An agent's test runner or dev server **outlives
+the session that spawned it**, with no window to close and nothing in the loop
+responsible for tidying up.
+
+Processes are attributed by walking the process tree — a leftover `node` says
+nothing about its origin, but its ancestry does. Reported by name: what it is,
+which agent left it, how long it's been stranded, and a button to quit it.
+
+The test that keeps this honest: only processes **reparented to launchd** count.
+A child still held by a live parent is already somebody's responsibility.
+
+</details>
+
+<details>
+<summary><b>💾 Making room</b> — what to close so a model fits</summary>
+
+<br>
+
+Standing programs down onto the efficiency cores frees **no memory at all**,
+which is most of what matters when a model doesn't fit.
+
+No user-space program can release another's memory — `purge` needs root and
+only touches disk caches, `memory_pressure` *allocates* rather than reclaims,
+and there's no API to make a process yield. **Closing it is the only way.**
+
+So Wattson does the part it can: which applications are genuinely idle, what
+each is holding, and how many it takes to clear the shortfall — grouped by the
+app that owns them, because closing one browser renderer does nothing.
+
+</details>
+
+---
+
+## What it shows
+
+<table>
+<tr>
+<td width="50%"><img src="docs/cpu-dark-en.png"></td>
+<td width="50%"><img src="docs/battery-dark-en.png"></td>
+</tr>
+<tr>
+<td>
+
+**CPU** — busy/user/system split, load history with peaks preserved, per-core
+load with efficiency and performance clusters separated, **per-cluster clock
+speed** from IOReport, load averages, uptime.
+
+</td>
+<td>
+
+**Battery** — charge, health against design capacity, cycles, voltage, current,
+draw, and **temperature with its own history**. Sustained heat is what ages a
+pack.
+
+</td>
+</tr>
+<tr>
+<td><img src="docs/memory-dark-en.png"></td>
+<td><img src="docs/history-dark-en.png"></td>
+</tr>
+<tr>
+<td>
+
+**Memory** — real pressure level from the kernel, split app / wired /
+compressed / free, swap, and the largest resident applications.
+
+</td>
+<td>
+
+**History** — each program's learned baseline: usual CPU, spread, peak, longest
+hot run, usual network and syscall rates, a bar per day with today marked
+against it.
+
+</td>
+</tr>
+</table>
+
+Everything comes from stock `top`, `nettop`, `sysctl`, the IO registry, the SMC
+and IOReport. **No root, no kernel extension, no helper daemon.** Hover any
+chart to name the column — average, peak, and the time it covers.
+
+---
+
+## The escalation ladder
+
+Gentlest first.
+
+**1 · Demote to efficiency cores** — `taskpolicy -b`. Measured on an M5:
+
+```
+normal priority     4381 Miter/s
+taskpolicy -b        180 Miter/s     ← 24× slower
+taskpolicy -B       4367 Miter/s     ← fully restored
+```
+
+The process keeps running, keeps its connections, loses no state, and is
+restored the moment it behaves again.
+
+**2 · Restart** — only if demotion hasn't settled it after several minutes, and
+at most twice an hour.
+
+Before intervening, `sample` is run and the stack saved. The difference between
+*"Clash used a lot of CPU while you were out"* and *"Clash was wedged in this
+exact call"* is evidence that no longer exists by the time you get home.
+
+### 🛟 Lifelines
+
+Never touched, under any circumstances:
+
+- **System-critical processes** — interfering degrades or panics macOS
+- **Your way back in** — `sshd`, Tailscale, VNC, ToDesk, TeamViewer, AnyDesk,
+  WireGuard, Cloudflare WARP
+
+> A watchdog that suspends your VPN has locked you out of the machine it was
+> protecting.
+
+It also **starts in observe-only mode**, and never acts on a program that
+doesn't have a baseline yet.
+
+---
+
+## What it deliberately doesn't do
+
+It does not judge whether a computation is *useful*. That isn't decidable, and
+the measurements say so plainly — two processes, one in an infinite empty loop,
+one doing real arithmetic:
 
 ```
 COMMAND              CPU%   SYSCALL/cpus    IPC
@@ -94,80 +266,12 @@ Python (spin loop)   99.9              0   8.06
 Python (real math)   99.9              0   8.22
 ```
 
-Indistinguishable, and they always will be. Any tool claiming to detect "wasted"
-CPU from hardware counters is guessing. wattson detects something weaker but
-real: a **regime change**. Not "this work is pointless" but "this program is not
-acting like itself."
+Indistinguishable, and always will be. Wattson detects a **regime change** —
+not *"this work is pointless"* but *"this program is not acting like itself."*
 
-## The escalation ladder
-
-Interventions are ordered so the gentlest one that could work is tried first.
-
-**1. Demote to efficiency cores** (`taskpolicy -b`). On Apple Silicon this
-confines the process to the E-cores. Measured on an M5:
-
-```
-normal priority     4381 Miter/s
-taskpolicy -b        180 Miter/s     ← 24x slower
-taskpolicy -B       4367 Miter/s     ← fully restored
-```
-
-A 24x cut in throughput, and the process keeps running, keeps its connections,
-loses no state, and is restored the moment it behaves again. This is a supported
-macOS mechanism — the same one the system uses to keep background work off the
-performance cores — not a trick.
-
-**2. Restart**, only if demotion hasn't settled it after several minutes, and at
-most twice an hour. Anything supervised comes back clean.
-
-Before intervening, wattson runs `sample` on the process and saves the stack.
-The difference between *"Clash used a lot of CPU while you were out"* and
-*"Clash was wedged in this exact call"* is evidence that no longer exists by the
-time you get home — unless something captured it.
-
-## Lifelines: what it will never touch
-
-This is the part that makes it safe to leave running while you are away.
-
-- **System-critical processes.** Interfering degrades or panics macOS.
-- **Your way back in** — `sshd`, Tailscale, VNC, ToDesk, TeamViewer, AnyDesk,
-  WireGuard, Cloudflare WARP. A watchdog that decides your VPN daemon is
-  misbehaving and suspends it has locked you out of the machine it was supposed
-  to be protecting, from wherever you happen to be standing.
-
-These are never demoted, never restarted, never scored. Add your own in
-`neverTouch`.
-
-**It also starts in observe-only mode.** For the first days it reports what it
-*would* have done and changes nothing. Set `"dryRun": false` once the verdicts
-look right to you.
-
-## What it shows
-
-| | |
-|---|---|
-| <img src="docs/cpu-dark-en.png" width="400"> | **CPU** — busy/user/system split, load history, and per-core load with the efficiency and performance clusters separated. That split matters here: confining a process to the E-cores is the first thing Wattson does about a runaway, so you can watch the intervention work. |
-| <img src="docs/battery-dark-en.png" width="400"> | **Battery** — charge, health against design capacity, cycle count, voltage, current, draw, and **temperature with its own history**. Lithium packs age fastest when held hot, and a process stuck at full CPU while you are away keeps the pack warm for hours. That is the damage this app exists to prevent, so the record of it is a first-class page. |
-| <img src="docs/memory-dark-en.png" width="400"> | **Memory** — real pressure level from the kernel, split into app / wired / compressed / free, with swap and the largest resident processes. |
-| <img src="docs/history-dark-en.png" width="400"> | **History** — every program's learned baseline: usual CPU, spread, peak, longest hot run, usual network and syscall rates, and a bar per day with today marked against it. This is the evidence behind every judgement the app makes. |
-
-Everything above comes from stock `top`, `nettop`, `sysctl` and the IO registry.
-No root, no kernel extension, no helper daemon.
-
-## Settings
-
-<p align="center">
-  <img src="docs/settings-light-en.png" width="440" alt="Wattson settings">
-</p>
-
-Notifications go to macOS Notification Centre and, optionally, to
-[ntfy](https://ntfy.sh) (free app on iOS and Android — subscribe to any topic
-name) or a WeCom group bot webhook. Both are just a URL.
+---
 
 ## Install
-
-Requires macOS 13+. Apple Silicon recommended: E-core demotion is what makes the
-gentle intervention possible, and on Intel it degrades to priority reduction.
 
 ```sh
 git clone https://github.com/BabyChemZ/wattson
@@ -177,57 +281,51 @@ cp -r dist/Wattson.app /Applications/
 open /Applications/Wattson.app
 ```
 
-Then turn on **Start at login** in Settings. No Xcode needed — the bundle is
-assembled by SwiftPM and a shell script.
+No Xcode needed — SwiftPM builds the binary, a shell script assembles the
+bundle. Then turn on **Start at login** in Settings.
 
-No root, no kernel extension, no TCC prompt. Every measurement comes from stock
-`top` and `nettop`, which is a deliberate constraint: a watchdog you have to
-grant privileges to is a watchdog most people never install.
+<details>
+<summary>Downloaded a release archive instead?</summary>
 
-## Command line
+<br>
 
-The same binary is also a CLI, which is the fastest way to see the engine's
-reasoning:
+The build is unsigned, so a downloaded copy is quarantined:
 
 ```sh
-wattson top                    # every process right now, as the engine sees it
-wattson status                 # what has been learned about each program
+xattr -dr com.apple.quarantine /Applications/Wattson.app
+```
+
+Building it yourself avoids this entirely.
+
+</details>
+
+### Command line
+
+The same binary is a CLI:
+
+```sh
+wattson top                    # every process as the engine sees it
+wattson status                 # what's been learned about each program
 wattson explain verge-mihomo   # one program's baseline in detail
+wattson sensors                # every temperature sensor
 wattson watch                  # run the watchdog in the foreground
-wattson install                # run at login without the UI
 ```
 
-```
-COMMAND               CPU%   USUAL   SYSCALL/s    NET B/s    IPC  VERDICT
-verge-mihomo         402.1     1.5           0          0   1.10  ANOMALOUS — CPU 402% vs its 47-day norm of 1.5%
-Codex (Service)      118.3    96.2       24573          0   0.96
-WindowServer          34.6       -       33343          0   1.33  protected (system-critical)
-CloudflareWARP         0.5       -       48883          0   1.03  protected (remote-access lifeline)
-```
+---
 
-## Signals
+## Honest limitations
 
-All per-process, all sudo-free, sampled every 30s:
+- **Events are rare, by design.** macOS is stable — a well-behaved machine may
+  go weeks with nothing flagged. That's the good outcome, but it means the
+  watchdog is insurance; day to day, the value is in the monitoring and the
+  inference and agent work.
+- **Tested on one machine** — M5 MacBook Air, 24 GB, macOS 26. Intel is
+  untested and parts won't work there.
+- **Unsigned** — notarisation needs a paid developer account.
+- **No automated tests yet.**
 
-| Signal | Source | What a change means |
-|---|---|---|
-| CPU time | `top` TIME, differenced | the gate — must be unusual *for this program* |
-| Network bytes | `nettop -P` | a proxy that stopped moving bytes is wedged, not busy |
-| Syscalls | `top` SYSMACH+SYSBSD | pegging a core without touching the kernel = user-space spin |
-| Instructions / cycles | `top` INSTRS, CYCLES | IPC shifts in *either* direction: tight loops run it up, lock contention runs it down |
-| Episode duration | measured | hot for longer than it has ever been hot |
-| Idle wakeups | `top` IDLEW | timer storms and polling loops |
+---
 
-Statistics use median and MAD rather than mean and standard deviation
-throughout, because the events being detected are extreme outliers and a mean
-would let one runaway episode poison the very baseline it is judged against.
-
-## Config
-
-`~/.wattson/config.json`, created on first run. Notifications go to macOS
-Notification Centre, and optionally to [ntfy](https://ntfy.sh) or a WeCom group
-bot webhook — both just a URL.
-
-## License
-
-MIT
+<p align="center">
+  <sub>MIT · Built for a Mac that's often left running alone.</sub>
+</p>

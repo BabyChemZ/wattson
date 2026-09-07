@@ -185,7 +185,7 @@ struct PanelView: View {
             Spacer()
             FooterButton(title: L("Open Wattson", "打开主窗口")) { model.openMainWindow() }
             FooterButton(title: L("Settings", "设置")) { model.openSettings() }
-            FooterButton(title: L("Quit", "退出")) { NSApplication.shared.terminate(nil) }
+            FooterButton(title: L("Quit", "退出")) { model.quit() }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)

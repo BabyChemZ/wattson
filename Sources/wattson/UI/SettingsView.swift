@@ -193,17 +193,11 @@ extension SettingsView {
     /// Which live readings ride in the menu bar.
     var menuBar: some View {
         Card(title: L("Menu bar", "菜单栏")) {
-            Text(L("Each gets its own slot, with its own panel. macOS hides whatever will not fit — a notched laptop runs out of width fast.",
-                   "每项占据独立位置，各有自己的面板。放不下的会被 macOS 直接隐藏 —— 带刘海的机型宽度很快就用完。"))
+            Text(L("Shown next to the icon. Everything is one click away in the panel regardless.",
+                   "显示在图标旁边。无论选哪些，面板里点一下都能看到全部。"))
                 .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Toggle(isOn: $model.config.menuBarCompact) {
-                Text(L("Combine into one slot", "合并到一个位置"))
-                    .font(.ui(12)).foregroundStyle(Color.ink)
-            }
-            .toggleStyle(.switch)
-            .tint(Color.accent)
             Toggle(isOn: $model.config.menuBarLabels) {
                 Text(L("Label each reading", "每项带标签"))
                     .font(.ui(12)).foregroundStyle(Color.ink)
@@ -211,7 +205,17 @@ extension SettingsView {
             .toggleStyle(.switch)
             .tint(Color.accent)
             ForEach(MenuBarModule.allCases) { module in
-                Toggle(isOn: model.moduleBinding(module)) {
+                Toggle(isOn: Binding(
+                    get: { model.config.menuBarModules.contains(module) },
+                    set: { on in
+                        if on {
+                            if !model.config.menuBarModules.contains(module) {
+                                model.config.menuBarModules.append(module)
+                            }
+                        } else {
+                            model.config.menuBarModules.removeAll { $0 == module }
+                        }
+                    })) {
                     Text(module.title).font(.ui(12)).foregroundStyle(Color.ink)
                 }
                 .toggleStyle(.switch)

@@ -97,16 +97,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// The readings folded into the main slot when compact.
-    var compactReadings: String {
-        guard config.menuBarCompact else { return "" }
-        return config.menuBarModules.map { module in
-            config.menuBarLabels
-                ? "\(module.tag)\u{2009}\(module.value(state))"
-                : module.value(state)
-        }.joined(separator: "  ")
-    }
-
     var learningTail: String {
         state.learningPrograms > 0
             ? L("+\(state.learningPrograms) learning", "+\(state.learningPrograms) 学习中")
@@ -551,28 +541,6 @@ final class AppModel: ObservableObject {
     func quit() {
         engine.flush()
         NSApplication.shared.terminate(nil)
-    }
-
-    /// Whether a module occupies a menu bar slot. Toggling it inserts or
-    /// removes the item live.
-    func moduleBinding(_ module: MenuBarModule) -> Binding<Bool> {
-        Binding(
-            get: { !self.config.menuBarCompact
-                   && self.config.menuBarModules.contains(module) },
-            set: { shown in
-                // In compact mode `get` already returns false for everything,
-                // and SwiftUI writes that back when it removes the item — which
-                // would delete the user's choices rather than merely hiding
-                // them. The selection has to survive the mode it is not in.
-                guard !self.config.menuBarCompact else { return }
-                if shown {
-                    if !self.config.menuBarModules.contains(module) {
-                        self.config.menuBarModules.append(module)
-                    }
-                } else {
-                    self.config.menuBarModules.removeAll { $0 == module }
-                }
-            })
     }
 
     func openSettings() {

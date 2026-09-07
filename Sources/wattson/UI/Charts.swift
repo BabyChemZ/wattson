@@ -456,6 +456,7 @@ struct ProcessBar: View {
                 .foregroundStyle(Color.ink)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if row?.drawsHeavily == true { HeavyDrawMark() }
             Spacer(minLength: 8)
             // Appears under the pointer rather than sitting on every row: six
             // permanent quit buttons on a dashboard invite the accident they

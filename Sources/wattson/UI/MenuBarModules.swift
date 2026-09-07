@@ -179,6 +179,7 @@ struct ModuleDetail: View {
                                 Text(row.displayName)
                                     .font(.ui(11)).foregroundStyle(Color.ink)
                                     .lineLimit(1).truncationMode(.middle)
+                                if row.drawsHeavily { HeavyDrawMark() }
                                 Spacer(minLength: 6)
                                 Text(model.panelValue(row, metric: module.ranking))
                                     .font(.figure(10.5, .medium))
@@ -379,5 +380,20 @@ struct ModuleDetail: View {
             .font(.ui(10.5)).foregroundStyle(Color.accent)
         }
         .buttonStyle(.plain)
+    }
+}
+
+
+/// Marks a process that has been drawing significant energy for a while.
+///
+/// The same claim the system's battery menu makes, kept to a symbol: the list
+/// is five rows in a narrow panel, and a word of explanation on each would
+/// crowd out the numbers people came to read. The tooltip carries the meaning.
+struct HeavyDrawMark: View {
+    var body: some View {
+        Image(systemName: "bolt.fill")
+            .font(.system(size: 8.5, weight: .semibold))
+            .foregroundStyle(Color.alertTint)
+            .help(L("Using significant energy", "正在使用大量能耗"))
     }
 }

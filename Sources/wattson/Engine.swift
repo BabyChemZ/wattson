@@ -103,10 +103,16 @@ final class Engine: @unchecked Sendable {
     /// How long a leftover process must stay stranded and busy to be worth
     /// naming.
     private static let orphanSustain: TimeInterval = 120
+    /// Activity Monitor's Energy Impact, above which a process counts as a
+    /// real draw rather than a busy moment.
+    private static let heavyEnergyImpact: Double = 10
+    private static let heavyEnergySustain: TimeInterval = 180
     /// When each threshold was first crossed in the current run of readings.
     private var alertCrossedAt: [String: Date] = [:]
     /// pid -> when it was first seen stranded and above the CPU floor.
     private var orphanBusySince: [Int32: Date] = [:]
+    /// pid -> when its energy impact first went past the mark in this run.
+    private var heavyEnergySince: [Int32: Date] = [:]
     private var inferencePressureSince: Date?
     private var lastAlert: [String: Date] = [:]
     private static let alertCooldown: TimeInterval = 1800
@@ -733,6 +739,8 @@ final class Engine: @unchecked Sendable {
         let estimate = remainingTicks.map {
             max(1, Int(Double($0) * config.tickSeconds / 60))
         }
+        markHeavyEnergyUsers(&rows)
+
         let sorted = rows.sorted {
             $0.status.sortRank != $1.status.sortRank
                 ? $0.status.sortRank < $1.status.sortRank
@@ -768,6 +776,30 @@ final class Engine: @unchecked Sendable {
     /// This is a failure ordinary software does not have: a program you closed
     /// is gone, but an agent's test runner or dev server outlives the session
     /// that spawned it, with no window to close and nobody watching it.
+    /// Flag the processes drawing significant energy, sustained.
+    ///
+    /// Energy Impact counts wakeups, network and GPU work alongside CPU time,
+    /// which is why a proxy sitting at 2% CPU can outrank a compiler at 60% —
+    /// it is the reading that finds the process nobody thinks to look at. The
+    /// system's own battery menu names one or two the same way, on a long
+    /// average; a few minutes is enough to separate a real draw from a burst.
+    private func markHeavyEnergyUsers(_ rows: inout [ProcessRow]) {
+        let now = Date()
+        var stillDrawing: Set<Int32> = []
+
+        for index in rows.indices {
+            guard rows[index].energyImpact >= Self.heavyEnergyImpact else { continue }
+            stillDrawing.insert(rows[index].pid)
+            let since = heavyEnergySince[rows[index].pid] ?? now
+            heavyEnergySince[rows[index].pid] = since
+            rows[index].drawsHeavily =
+                now.timeIntervalSince(since) >= Self.heavyEnergySustain
+        }
+        // Dropping back below the mark ends the run, so a process that idles
+        // and later climbs again starts its clock over.
+        heavyEnergySince = heavyEnergySince.filter { stillDrawing.contains($0.key) }
+    }
+
     private func updateOrphans(deltas: [ProcDelta]) {
         let tree = ProcessTree(deltas)
         agentBooks.observe(deltas, tree: tree)

@@ -21,6 +21,9 @@ struct ProcessRow: Identifiable, Equatable {
     let recentCPU: [Double]
     let status: RowStatus
     let detail: String
+    /// Has been drawing significant energy long enough to be worth naming —
+    /// the same idea as the system's battery menu, on our own measurement.
+    var drawsHeavily = false
 }
 
 enum RowStatus: Equatable {

@@ -38,13 +38,25 @@ struct MenuBarLabel: View {
     /// before four of them fit — the drill-down inside the panel gives the same
     /// separation without competing for that space.
     private var composed: String {
-        let readings = model.config.menuBarModules.map { module in
-            model.config.menuBarLabels
-                ? "\(module.tag)\u{2009}\(module.value(model.state))"
-                : module.value(model.state)
+        let density = model.config.menuBarDensity
+        let readings = model.config.menuBarModules.map { module -> String in
+            var value = module.value(model.state)
+            if density == .tight {
+                // The unit is the least informative character present: a row
+                // of numbers in fixed positions is read positionally anyway.
+                value = value.replacingOccurrences(of: "%", with: "")
+            }
+            return model.config.menuBarLabels && density == .roomy
+                ? "\(module.tag)\u{2009}\(value)"
+                : value
         }
         let status = model.state.anomalyCount > 0
             ? "\u{25C6}\u{2009}\(model.state.anomalyCount)" : "\u{25C7}"
-        return ([status] + readings).joined(separator: "  ")
+
+        // With nothing wrong there is nothing to report, and the width is
+        // better spent on whatever the system wants to put there instead.
+        if density == .quiet, model.state.anomalyCount == 0 { return "\u{25C7}" }
+
+        return ([status] + readings).joined(separator: density == .roomy ? "  " : " ")
     }
 }

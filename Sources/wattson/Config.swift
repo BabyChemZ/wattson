@@ -47,6 +47,14 @@ struct Config: Codable {
     var menuBarModules: [MenuBarModule] = [.cpu, .memory]
     /// Prefix each reading with a one-letter tag, so several are tellable apart.
     var menuBarLabels = true
+    /// How much room the menu bar item is allowed to take.
+    ///
+    /// macOS gives a menu bar app no way to ask how much width is left, and on
+    /// a notched laptop there is very little: the moment a microphone or screen
+    /// recording indicator appears, the system hides whatever no longer fits —
+    /// silently, and third-party items go first. Shrinking on request is the
+    /// only lever there is.
+    var menuBarDensity = MenuBarDensity.roomy
     /// Warn when these are exceeded. Nil disables the alert.
     var alertCPUPercent: Double? = nil
     var alertMemoryPercent: Double? = 92
@@ -103,6 +111,7 @@ struct Config: Codable {
         neverTouch = value(.neverTouch, fallback.neverTouch)
         menuBarModules = value(.menuBarModules, fallback.menuBarModules)
         menuBarLabels = value(.menuBarLabels, fallback.menuBarLabels)
+        menuBarDensity = value(.menuBarDensity, fallback.menuBarDensity)
         hasShownWindow = value(.hasShownWindow, fallback.hasShownWindow)
         language = value(.language, fallback.language)
         localNotifications = value(.localNotifications, fallback.localNotifications)
@@ -146,5 +155,25 @@ struct Config: Codable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(self).write(to: Self.path, options: .atomic)
+    }
+}
+
+/// How much of the menu bar Wattson is allowed to occupy.
+enum MenuBarDensity: String, Codable, CaseIterable, Identifiable {
+    /// Tags, units, and a wide gap between readings.
+    case roomy
+    /// Numbers only, single spaces — roughly two-thirds the width.
+    case tight
+    /// Just the status diamond until something is actually wrong.
+    case quiet
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .roomy: return L("Roomy", "完整")
+        case .tight: return L("Tight", "紧凑")
+        case .quiet: return L("Only when something is wrong", "仅在异常时显示")
+        }
     }
 }

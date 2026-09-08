@@ -198,12 +198,31 @@ extension SettingsView {
                 .font(.ui(10.5)).foregroundStyle(Color.inkFaint)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Toggle(isOn: $model.config.menuBarLabels) {
-                Text(L("Label each reading", "每项带标签"))
+            HStack {
+                Text(L("Width", "占用宽度"))
                     .font(.ui(12)).foregroundStyle(Color.ink)
+                Spacer()
+                Picker("", selection: $model.config.menuBarDensity) {
+                    ForEach(MenuBarDensity.allCases) { density in
+                        Text(density.title).tag(density)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 190)
             }
-            .toggleStyle(.switch)
-            .tint(Color.accent)
+            Text(L("A notched laptop has very little room to the right of the notch, and macOS hides whatever no longer fits — without saying so — the moment a microphone or recording indicator appears.",
+                   "刘海机型右侧空间很小。一旦出现麦克风或录屏指示器，macOS 会把放不下的图标直接隐藏，且不作任何提示。"))
+                .font(.ui(10)).foregroundStyle(Color.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if model.config.menuBarDensity == .roomy {
+                Toggle(isOn: $model.config.menuBarLabels) {
+                    Text(L("Label each reading", "每项带标签"))
+                        .font(.ui(12)).foregroundStyle(Color.ink)
+                }
+                .toggleStyle(.switch)
+                .tint(Color.accent)
+            }
             ForEach(MenuBarModule.allCases) { module in
                 Toggle(isOn: Binding(
                     get: { model.config.menuBarModules.contains(module) },
